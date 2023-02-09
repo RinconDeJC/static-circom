@@ -130,6 +130,11 @@ where
         assert!(!self.variables.is_empty());
         self.variables.pop();
     }
+    pub fn get_top_block(&mut self) -> &HashMap<String,VC>{
+        debug_assert!(!self.variables.is_empty());
+        let length = self.variables.len();
+        &self.variables[length - 1].variables
+    }
     pub fn add_variable(&mut self, variable_name: &str, content: VC) {
         assert!(!self.variables.is_empty());
         let last_block = self.variables.last_mut().unwrap();

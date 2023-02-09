@@ -58,7 +58,8 @@ pub fn check_types(
     }
 
     // Semantics analyses
-    semantic_analyses(program_archive, &mut errors, &mut warnings);
+    function_semantic_analysis(program_archive, &mut warnings);
+    template_semantic_analyses(program_archive, &mut errors, &mut warnings);
 
     if !errors.is_empty() {
         Result::Err(errors)
@@ -122,7 +123,16 @@ fn function_level_decorators(program_archive: &mut ProgramArchive, reports: &mut
     }
 }
 
-fn semantic_analyses(
+fn function_semantic_analysis(
+    program_archive: &mut ProgramArchive,
+    warnings: &mut ReportCollection,
+) {
+    for function_data in program_archive.get_mut_functions().values_mut() {
+        warnings.append(&mut function_substitution_analysis(function_data));
+    }
+}
+
+fn template_semantic_analyses(
     program_archive: &ProgramArchive,
     errors: &mut ReportCollection,
     warnings: &mut ReportCollection,

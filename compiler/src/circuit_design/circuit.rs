@@ -441,8 +441,8 @@ impl Circuit {
         self.functions[id].to_string()
     }
     pub fn produce_c<W: Write>(&self, c_folder: &str, run_name: &str, c_circuit: &mut W, c_dat: &mut W) -> Result<(), ()> {
-	use std::path::Path;
-	let c_folder_path = Path::new(c_folder.clone()).to_path_buf();
+	    use std::path::Path;
+	    let c_folder_path = Path::new(c_folder.clone()).to_path_buf();
         c_code_generator::generate_main_cpp_file(&c_folder_path).map_err(|_err| {})?;
         c_code_generator::generate_circom_hpp_file(&c_folder_path).map_err(|_err| {})?;
         c_code_generator::generate_fr_hpp_file(&c_folder_path, &self.c_producer.prime_str).map_err(|_err| {})?;
