@@ -33,7 +33,8 @@ pub fn function_substitution_analysis(
 ) -> ReportCollection {
     let body = function_data.get_body();
     let mut reports = Vec::new();
-    let mut result = HashSet::new();
+    let mut return_set = HashSet::new();
+    let mut final_result = HashSet::new();
     let mut found_vars = SubsEnvironment::new();
     let mut non_read = VarMap::new();
     let mut curr_var_id = 0;
@@ -49,7 +50,8 @@ pub fn function_substitution_analysis(
         &mut non_read,
         &mut curr_subs_id,
         0,
-        &mut result,
+        &mut return_set,
+        &mut final_result,
         &mut reports
     );
     reports
@@ -62,41 +64,42 @@ fn analyse_statement(
     non_read: &mut VarMap,
     curr_subs_id: &mut IdSubs,
     depth: u32,
-    result: &mut HashSet<IdSubs>,
+    return_set: &mut HashSet<(IdSubs, u32)>,
+    final_result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
-) -> Option<HashSet<(IdSubs, u32)>>  { 
+) { 
     match stmt{
         Statement::Block {..}=> {
-            analyse_block(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
+            analyse_block(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports)
         }
         Statement::IfThenElse {..} =>{
-            analyse_if_else(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
+            analyse_if_else(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports)
         }
         Statement::While {..} =>{
-            analyse_while(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
+            analyse_while(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports)
         }
         Statement::Return {..} =>{
-            analyse_return(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
+            analyse_return(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports)
         }
         Statement::InitializationBlock {..} =>{
-            analyse_initialization_block(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
+            analyse_initialization_block(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports)
         }
         Statement::Declaration {..} =>{
-            analyse_declaration(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
+            analyse_declaration(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports)
         }
         Statement::Substitution {..} =>{
-            analyse_substitution(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
+            analyse_substitution(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports)
         }
         Statement::MultSubstitution {..} =>{
-            analyse_mult_substitution(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
+            analyse_mult_substitution(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports)
         }
         Statement::LogCall {..} =>{
-            analyse_log_call(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
+            analyse_log_call(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports)
         }
         Statement::Assert {..} =>{
-            analyse_assert(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
+            analyse_assert(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports)
         }
-        _ => {Option::None}
+        _ => {}
 
     }
 }
@@ -113,32 +116,32 @@ fn analyse_block(
     non_read: &mut VarMap,
     curr_subs_id: &mut IdSubs,
     depth: u32,
-    result: &mut HashSet<IdSubs>,
+    return_set: &mut HashSet<(IdSubs, u32)>,
+    final_result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
-) -> Option<HashSet<(IdSubs, u32)>> {
+) {
     use Statement::Block;
     if let Block { stmts,.. } = stmt{
         // add new block
         found_vars.add_variable_block();
-        let mut useless_subs: HashSet<(IdSubs, u32)> = HashSet::new();
         // iterate over statements
         for stmt in stmts.iter() {
-            if let Option::Some(subs_set) = 
-                analyse_statement(
-                    stmt,
-                    found_vars,
-                    curr_var_id,
-                    non_read,
-                    curr_subs_id,
-                    depth,
-                    result,
-                    reports
-                ){
-                    useless_subs.extend(&subs_set);
-                }
+            // As we are interested in collecting the union of return sets
+            // from each statement, we might aswell just pass the same set
+            // to all of them so they get inserted there
+            analyse_statement(
+                stmt,
+                found_vars,
+                curr_var_id,
+                non_read,
+                curr_subs_id,
+                depth,
+                return_set,
+                final_result,
+                reports);
         }
         // Mark as useless all the substitutions this block can decide about
-        let return_set = split_useless_subs(&useless_subs, depth, result);
+        split_useless_subs(return_set, depth, final_result);
         // get outing block and check if there are useless substitutions still here
         let outing_block = found_vars.get_top_block();
         // A substitution of a variable that hasn't been read and whose variable's
@@ -146,11 +149,10 @@ fn analyse_block(
         for var_id in outing_block.values() {
             if let Option::Some(subs_set) = get_var_content(non_read, *var_id){
                 for (subs_id, _) in subs_set{
-                    result.insert(*subs_id);
+                    final_result.insert(*subs_id);
                 }
             }
         }
-        Option::Some(return_set)
     }
     else{
         unreachable!();
@@ -158,27 +160,27 @@ fn analyse_block(
 }
 
 fn split_useless_subs(
-    useless_subs: &HashSet<(IdSubs, u32)>,
+    partial_useless: &mut HashSet<(IdSubs, u32)>,
     depth: u32,
-    result: &mut HashSet<IdSubs>,
-) -> HashSet<(IdSubs, u32)> {
-    let mut return_set: HashSet<(IdSubs, u32)> = HashSet::new();
-    for (id, d) in useless_subs.iter() {
+    final_result: &mut HashSet<IdSubs>,
+) {
+    let mut to_remove = Vec::new();
+    for (id, d) in partial_useless.iter() {
         // If the substitution was made in this block or in an
-        // inner block and has been marked as usless, it can be
-        // added to the final result
+        // inner block and has been marked as useless, it can be
+        // added to the final result and deleted from partial useless
         if *d >= depth {
-            result.insert(*id);
+            to_remove.push((*id, *d));
+            final_result.insert(*id);
         }
         // If the substitution is done in an outer block
         // this block can't yet decide if it is usless, 
         // so it will be returned to an outer block
-        // evaluates this
-        else{
-            return_set.insert((*id, *d));
-        }
+        // evaluates this. So it is kept in partial_useless
     }
-    return return_set;
+    for pair in to_remove{
+        partial_useless.remove(&pair);
+    }
 }
 
 fn analyse_if_else(
@@ -188,9 +190,10 @@ fn analyse_if_else(
     non_read: &mut VarMap,
     curr_subs_id: &mut IdSubs,
     depth: u32,
-    result: &mut HashSet<IdSubs>,
+    return_set: &mut HashSet<(IdSubs, u32)>,
+    final_result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
-) -> Option<HashSet<(IdSubs, u32)>> {
+) {
     use Statement::IfThenElse;
     if let IfThenElse { cond, if_case, else_case, .. } = stmt {
         let mut read_vars = HashSet::new();
@@ -198,73 +201,63 @@ fn analyse_if_else(
         // Process vars in expression
         mark_read_vars(&read_vars, found_vars, non_read);
         // Get the substitutions that the if statement considers useless
-        let mut if_useless_set =  
-            analyse_statement(
-                if_case, 
-                found_vars, 
-                curr_var_id, 
-                non_read, 
-                curr_subs_id,
-                depth, 
-                result, 
-                reports
-            );
+        let mut if_useless_set = HashSet::new();
+        // Make a copy of non_read_variables before analysing both statements
+        let mut non_read_copy = non_read.clone();
+        analyse_statement(
+            if_case, 
+            found_vars, 
+            curr_var_id, 
+            non_read, 
+            curr_subs_id,
+            depth, 
+            &mut if_useless_set,
+            final_result,
+            reports
+        );
+        let mut else_useless_set = HashSet::new();
         if let Option::Some(s) = else_case {
             // Clone the non_read map so no collision occur with an
             // execution that this statement shouldn't be able to see
             // No collisions occur with the Environment as they are prepared
             // for this use (assuming there is a block next)
-            let mut non_read_copy = non_read.clone();
-            let else_usless_set = 
+            let mut else_usless_set = HashSet::new();
             analyse_statement(
                 s, 
                 found_vars, 
                 curr_var_id, 
                 &mut non_read_copy, 
                 curr_subs_id,
-                depth, 
-                result, 
+                depth,
+                &mut else_useless_set,
+                final_result,
                 reports
             );
-            if let Option::Some(mut if_set) = if_useless_set{
-                let mut wrapper = Option::Some(&mut if_set);
-                merge_branches(
-                    non_read,
-                    &mut wrapper,
-                    non_read_copy, 
-                    else_usless_set, 
-                    depth
-                );
-                if let Option::Some(_) = wrapper{
-                    Option::Some(if_set)
-                }
-                else{
-                    Option::None
-                }  
-            }
-            else{
-                merge_branches(
-                    non_read,
-                    &mut Option::None,
-                    non_read_copy, 
-                    else_usless_set, 
-                    depth
-                );
-                Option::None
-            }
-            
-            // DUDA: Si antes he cogido una referencia mutable al 
-            // al elemento que está dentro del Option, estoy devolviendo bien
-            // este option con el HashSet de dentro cambiado como haya hecho
-            // merge_branches?
+            merge_branches(
+                non_read,
+                &mut if_useless_set,
+                &mut non_read_copy, 
+                &mut else_usless_set, 
+                depth
+            );
+            return_set.extend(if_useless_set);
         }
         else{
             // In case there is an empty else, as if there are no instructions
             // no substitution can be considered useless and the result must be
             // the intersection of the useless substitutions in if and else, the
             // result must be an empty set. 
-            // In this case Option::None represents that
-            Option::None
+            // In this case not extending return_set with the result in
+            // if_useless_set has that meaning of empty result.
+            // Merging branches is still needed to keep coherent information
+            // about non read variables
+            merge_branches(
+                non_read,
+                &mut if_useless_set,
+                &mut non_read_copy, 
+                &mut HashSet::new(), 
+                depth
+            );
         }
     } else {
         unreachable!()
@@ -278,9 +271,10 @@ fn analyse_while(
     non_read: &mut VarMap,
     curr_subs_id: &mut IdSubs,
     depth: u32,
-    result: &mut HashSet<IdSubs>,
+    return_set: &mut HashSet<(IdSubs, u32)>,
+    final_result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
-) -> Option<HashSet<(IdSubs, u32)>> {
+) {
     use Statement::While;
     if let While { cond, stmt, .. } = stmt_w {
         // TODO: same approach as an if else with an empty else
@@ -297,15 +291,15 @@ fn analyse_return(
     non_read: &mut VarMap,
     curr_subs_id: &mut u32,
     depth: u32,
-    result: &mut HashSet<IdSubs>,
+    return_set: &mut HashSet<(IdSubs, u32)>,
+    final_result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
-) -> Option<HashSet<(IdSubs, u32)>> {
+) {
     use Statement::Return;
     if let Return { value, .. } = stmt {
         let mut read_vars = HashSet::new();
         analyse_expression(value, &mut read_vars);
         mark_read_vars(&read_vars, found_vars, non_read);
-        Option::None
     } else {
         unreachable!()
     }
@@ -319,9 +313,10 @@ fn analyse_initialization_block(
     non_read: &mut VarMap,
     curr_subs_id: &mut IdSubs,
     depth: u32,
-    result: &mut HashSet<IdSubs>,
+    return_set: &mut HashSet<(IdSubs, u32)>,
+    final_result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
-) -> Option<HashSet<(IdSubs, u32)>> {
+) {
     use Statement::InitializationBlock;
     if let InitializationBlock { initializations, .. } = stmt {
         // TODO
@@ -338,14 +333,14 @@ fn analyse_declaration(
     non_read: &mut VarMap,
     curr_subs_id: &mut u32,
     depth: u32,
-    result: &mut HashSet<IdSubs>,
+    return_set: &mut HashSet<(IdSubs, u32)>,
+    final_result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
-) -> Option<HashSet<(IdSubs, u32)>> {
+) {
     use Statement::Declaration;
     if let Declaration { name, .. } = stmt {
         found_vars.add_variable(name, *curr_var_id);
         *curr_var_id += 1;
-        Option::None
     } else {
         unreachable!()
     }
@@ -358,9 +353,10 @@ fn analyse_substitution(
     non_read: &mut VarMap,
     curr_subs_id: &mut IdSubs,
     depth: u32,
-    result: &mut HashSet<IdSubs>,
+    return_set: &mut HashSet<(IdSubs, u32)>,
+    final_result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
-) -> Option<HashSet<(IdSubs, u32)>> {
+) {
     use Statement::Substitution;
     if let Substitution { var, access, .. } = stmt {
         // DUDA: para comprobar si no hay accesos basta ver que 
@@ -369,40 +365,36 @@ fn analyse_substitution(
         // Only complete substitutions are considered in this analysis
         if access.len() == 0 {
             if let Option::Some(id) = found_vars.get_variable(var){
-                let mut ret_val = Option::None;
                 if let Option::Some(subs_set) = 
                         get_var_content(non_read, *id) 
                 {
                     debug_assert!(!subs_set.is_empty());
-                    let mut useless_set: HashSet<(IdSubs, u32)> = HashSet::new();
                     for (subs_id, d) in subs_set{
                         // If the substitution is from an outer block
                         // this node can't decide if it useless in the final
                         // result, so it is added in the set to be returned
                         if *d < depth{
-                            useless_set.insert((*subs_id,*d));
+                            return_set.insert((*subs_id,*d));
                         }
-                        // If the substitution was made in this block or and
-                        // inner one, it can be marked as useless in the result
+                        // If the substitution was made in this block or in an
+                        // inner one, it can be marked as useless in the final
+                        // result
                         else{
-                            result.insert(*subs_id);
+                            final_result.insert(*subs_id);
                         }
                     }
-                    // DUDA: Esto hace una copia de useless_set?
-                    ret_val = Option::Some(useless_set);
                 }
                 // Add this substitution to non_read information
                 insert_pair(non_read, *id, *curr_subs_id, depth);
                 *curr_subs_id += 1;
-                return ret_val;
             }
             else{
                 unreachable!("Found variable not recognized in environment")
             }
         }
-        else{
-            Option::None
-        }
+        // else, i.e., this is not a full substitution
+        //  no checking are performed as this substitutions are
+        //  ignored and left in AST as they are
     } else {
         unreachable!()
     }
@@ -416,9 +408,10 @@ fn analyse_substitution(
     non_read: &mut VarMap,
     curr_subs_id: &mut IdSubs,
     depth: u32,
-    result: &mut HashSet<IdSubs>,
+    return_set: &mut HashSet<(IdSubs, u32)>,
+    final_result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
-) -> Option<HashSet<(IdSubs, u32)>> {
+) {
     use Statement::InitializationBlock;
     if let InitializationBlock { initializations, .. } = stmt {
         // TODO
@@ -435,9 +428,10 @@ fn analyse_log_call(
     non_read: &mut VarMap,
     curr_subs_id: &mut u32,
     depth: u32,
-    result: &mut HashSet<IdSubs>,
+    return_set: &mut HashSet<(IdSubs, u32)>,
+    final_result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
-) -> Option<HashSet<(IdSubs, u32)>> {
+) {
     use Statement::LogCall;
     if let LogCall { args, .. } = stmt {
         let mut read_vars = HashSet::new();
@@ -447,7 +441,6 @@ fn analyse_log_call(
             }
         }
         mark_read_vars(&read_vars, found_vars, non_read);
-        Option::None
     } else {
         unreachable!()
     }
@@ -460,15 +453,15 @@ fn analyse_assert(
     non_read: &mut VarMap,
     curr_subs_id: &mut IdSubs,
     depth: u32,
-    result: &mut HashSet<IdSubs>,
+    return_set: &mut HashSet<(IdSubs, u32)>,
+    final_result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
-) -> Option<HashSet<(IdSubs, u32)>> {
+) {
     use Statement::Assert;
     if let Assert { arg, .. } = stmt {
         let mut read_vars = HashSet::new();
         analyse_expression(arg, &mut read_vars);
         mark_read_vars(&read_vars, found_vars, non_read);
-        Option::None
     } else {
         unreachable!()
     }
@@ -595,18 +588,11 @@ fn get_var_content(
 }
 
 /// Removes all the information related to the variable
-/// If the variable was contained in the maps the set of
-/// substitutions that had to do with the variable is returned
 fn remove_var(
     map: &mut VarMap,
     var: IdVar,
-) -> Option<HashSet<(IdSubs, u32)>> {
-    if let Option::Some(subs_set) = map.remove(&var) {
-        Option::Some(subs_set)
-    }
-    else{
-        Option::None
-    }
+) {
+    map.remove(&var);
 }
 
 /// Removes a subsitution given the variable where it should be found and the
@@ -647,20 +633,13 @@ fn remove_subs_of_var (
 /// way as previously mentioned. 
 fn merge_branches(
     map: &mut VarMap,
-    useless_set: &mut Option<&mut HashSet<(IdSubs, u32)>>,
-    map2: VarMap,
-    useless_set2: Option<HashSet<(IdSubs, u32)>>,
+    useless_set: &mut HashSet<(IdSubs, u32)>,
+    map2: &mut VarMap,
+    useless_set2: &mut HashSet<(IdSubs, u32)>,
     curr_depth: u32,
 ) {
-    if let Option::Some(set1) = useless_set{
-        if let Option::Some(set2) = useless_set2{
-            set1.retain(|x| set2.contains(x));
-        }
-        else{
-            *useless_set = Option::None;
-        }
-    }
-
+    // Calculate intersection of useless_sets
+    useless_set.retain(|x| useless_set2.contains(x));
     let mut to_remove: Vec<(IdVar,(IdSubs, u32))> = Vec::new();
     for (id_var, set) in map.iter(){
         for (id_subs, depth) in set.iter(){
@@ -672,7 +651,7 @@ fn merge_branches(
                     &(*id_subs, *depth), 
                     id_var)
             {
-                    to_remove.push((*id_var,(*id_subs, *depth)));
+                to_remove.push((*id_var,(*id_subs, *depth)));
             }
         }
     }
@@ -681,8 +660,8 @@ fn merge_branches(
         remove_subs_of_var(map, &var, &subs_depth);
     }
 
-    for (id_var, set) in &map2{
-        for (id_subs, depth) in set{
+    for (id_var, set) in map2{
+        for (id_subs, depth) in set.iter(){
             // If this substitution is from an inner block
             // it is non read no matter if it is not in the other map
             // so the result must be the union
