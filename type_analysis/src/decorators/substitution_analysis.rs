@@ -9,15 +9,11 @@ use std::collections::HashMap;
 type IdSubs = u32;
 type IdVar = u32;
 type SubsEnvironment = VarEnvironment<IdVar>;
-type SubsMap = HashMap<IdSubs, (IdVar, u32)>;
+// type SubsMap = HashMap<IdSubs, (IdVar, u32)>;
 type VarMap = HashMap<IdVar, HashSet<(IdSubs, u32)>>;
 // NOTA: El tipo al que se reduce cada variable ya está apuntado en el Meta de 
 // cada variable
-#[derive(Clone)]
-struct DoubleIndexedMap{
-    subs_to_var : SubsMap,
-    var_to_subs : VarMap,
-}
+
 /// Given a function, this analysis checks for useless substitutions
 /// in the code and eliminates them.
 /// 
@@ -39,20 +35,19 @@ pub fn function_substitution_analysis(
     let mut reports = Vec::new();
     let mut result = HashSet::new();
     let mut found_vars = SubsEnvironment::new();
-    let mut non_read = DoubleIndexedMap{
-                            subs_to_var: SubsMap::new(), 
-                            var_to_subs: VarMap::new()
-                        };
+    let mut non_read = VarMap::new();
     let mut curr_var_id = 0;
+    let mut curr_subs_id = 0;
     for param in function_data.get_name_of_params() {
-        // TODO decidir cómo determinar el id
-        found_vars.add_variable(param, 1);
+        found_vars.add_variable(param, curr_var_id);
+        curr_var_id += 1;
     }
     analyse_statement(
         body,
         &mut found_vars,
         &mut curr_var_id, 
-        &mut non_read, 
+        &mut non_read,
+        &mut curr_subs_id,
         0,
         &mut result,
         &mut reports
@@ -64,41 +59,42 @@ fn analyse_statement(
     stmt: &Statement,
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut u32,
-    non_read: &mut DoubleIndexedMap,
+    non_read: &mut VarMap,
+    curr_subs_id: &mut IdSubs,
     depth: u32,
     result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
 ) -> Option<HashSet<(IdSubs, u32)>>  { 
     match stmt{
         Statement::Block {..}=> {
-            analyse_block(stmt, found_vars, curr_var_id,non_read, depth, result, reports)
+            analyse_block(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
         }
         Statement::IfThenElse {..} =>{
-            analyse_if_else(stmt, found_vars, curr_var_id,non_read, depth, result, reports)
+            analyse_if_else(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
         }
         Statement::While {..} =>{
-            analyse_while(stmt, found_vars, curr_var_id,non_read, depth, result, reports)
+            analyse_while(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
         }
         Statement::Return {..} =>{
-            analyse_return(stmt, found_vars, curr_var_id,non_read, depth, result, reports)
+            analyse_return(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
         }
         Statement::InitializationBlock {..} =>{
-            analyse_initialization_block(stmt, found_vars, curr_var_id,non_read, depth, result, reports)
+            analyse_initialization_block(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
         }
         Statement::Declaration {..} =>{
-            analyse_declaration(stmt, found_vars, curr_var_id,non_read, depth, result, reports)
+            analyse_declaration(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
         }
         Statement::Substitution {..} =>{
-            analyse_substitution(stmt, found_vars, curr_var_id,non_read, depth, result, reports)
+            analyse_substitution(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
         }
         Statement::MultSubstitution {..} =>{
-            analyse_mult_substitution(stmt, found_vars, curr_var_id,non_read, depth, result, reports)
+            analyse_mult_substitution(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
         }
         Statement::LogCall {..} =>{
-            analyse_log_call(stmt, found_vars, curr_var_id,non_read, depth, result, reports)
+            analyse_log_call(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
         }
         Statement::Assert {..} =>{
-            analyse_assert(stmt, found_vars, curr_var_id,non_read, depth, result, reports)
+            analyse_assert(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, result, reports)
         }
         _ => {Option::None}
 
@@ -114,7 +110,8 @@ fn analyse_block(
     stmt: &Statement,
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
-    non_read: &mut DoubleIndexedMap,
+    non_read: &mut VarMap,
+    curr_subs_id: &mut IdSubs,
     depth: u32,
     result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
@@ -132,6 +129,7 @@ fn analyse_block(
                     found_vars,
                     curr_var_id,
                     non_read,
+                    curr_subs_id,
                     depth,
                     result,
                     reports
@@ -187,7 +185,8 @@ fn analyse_if_else(
     stmt: &Statement,
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
-    non_read: &mut DoubleIndexedMap,
+    non_read: &mut VarMap,
+    curr_subs_id: &mut IdSubs,
     depth: u32,
     result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
@@ -205,6 +204,7 @@ fn analyse_if_else(
                 found_vars, 
                 curr_var_id, 
                 non_read, 
+                curr_subs_id,
                 depth, 
                 result, 
                 reports
@@ -221,6 +221,7 @@ fn analyse_if_else(
                 found_vars, 
                 curr_var_id, 
                 &mut non_read_copy, 
+                curr_subs_id,
                 depth, 
                 result, 
                 reports
@@ -274,7 +275,8 @@ fn analyse_while(
     stmt_w: &Statement,
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
-    non_read: &mut DoubleIndexedMap,
+    non_read: &mut VarMap,
+    curr_subs_id: &mut IdSubs,
     depth: u32,
     result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
@@ -292,7 +294,8 @@ fn analyse_return(
     stmt: &Statement,
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
-    non_read: &mut DoubleIndexedMap,
+    non_read: &mut VarMap,
+    curr_subs_id: &mut u32,
     depth: u32,
     result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
@@ -313,7 +316,8 @@ fn analyse_initialization_block(
     stmt: &Statement,
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
-    non_read: &mut DoubleIndexedMap,
+    non_read: &mut VarMap,
+    curr_subs_id: &mut IdSubs,
     depth: u32,
     result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
@@ -331,7 +335,8 @@ fn analyse_declaration(
     stmt: &Statement,
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
-    non_read: &mut DoubleIndexedMap,
+    non_read: &mut VarMap,
+    curr_subs_id: &mut u32,
     depth: u32,
     result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
@@ -350,7 +355,8 @@ fn analyse_substitution(
     stmt: &Statement,
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
-    non_read: &mut DoubleIndexedMap,
+    non_read: &mut VarMap,
+    curr_subs_id: &mut IdSubs,
     depth: u32,
     result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
@@ -363,6 +369,7 @@ fn analyse_substitution(
         // Only complete substitutions are considered in this analysis
         if access.len() == 0 {
             if let Option::Some(id) = found_vars.get_variable(var){
+                let mut ret_val = Option::None;
                 if let Option::Some(subs_set) = 
                         get_var_content(non_read, *id) 
                 {
@@ -381,11 +388,13 @@ fn analyse_substitution(
                             result.insert(*subs_id);
                         }
                     }
-                    Option::Some(useless_set)
+                    // DUDA: Esto hace una copia de useless_set?
+                    ret_val = Option::Some(useless_set);
                 }
-                else{
-                    Option::None
-                }
+                // Add this substitution to non_read information
+                insert_pair(non_read, *id, *curr_subs_id, depth);
+                *curr_subs_id += 1;
+                return ret_val;
             }
             else{
                 unreachable!("Found variable not recognized in environment")
@@ -404,7 +413,8 @@ fn analyse_substitution(
     stmt: &Statement,
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
-    non_read: &mut DoubleIndexedMap,
+    non_read: &mut VarMap,
+    curr_subs_id: &mut IdSubs,
     depth: u32,
     result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
@@ -422,7 +432,8 @@ fn analyse_log_call(
     stmt: &Statement,
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
-    non_read: &mut DoubleIndexedMap,
+    non_read: &mut VarMap,
+    curr_subs_id: &mut u32,
     depth: u32,
     result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
@@ -446,7 +457,8 @@ fn analyse_assert(
     stmt: &Statement,
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
-    non_read: &mut DoubleIndexedMap,
+    non_read: &mut VarMap,
+    curr_subs_id: &mut IdSubs,
     depth: u32,
     result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
@@ -470,7 +482,7 @@ fn analyse_assert(
 fn mark_read_vars(
     read_vars: &HashSet<String>,
     found_vars: &SubsEnvironment,
-    non_read: &mut DoubleIndexedMap,
+    non_read: &mut VarMap,
 ){
     for var in read_vars.iter() {
         if let Option::Some(id) = found_vars.get_variable(var){
@@ -531,23 +543,22 @@ fn analyse_expression(
 }
 
 // ------------------------------------------------
-// |    DoubleIndexedMap manipulation functions   |
+// |    VarMap manipulation functions   |
 // ------------------------------------------------
 
 /// Inserts the pair in both maps. The function assumes that there is
 /// no entry for var->subs, so if a useless substitution has been detected
 /// it should have been previously detected and removed
 fn insert_pair(
-    map: &mut DoubleIndexedMap,
+    map: &mut VarMap,
     var: IdVar,
     subs: IdSubs,
     depth: u32,
 ) {
-    map.subs_to_var.insert(subs, (var, depth));
-    if !map.var_to_subs.contains_key(&var) {
-        map.var_to_subs.insert(var, HashSet::new());
+    if !map.contains_key(&var) {
+        map.insert(var, HashSet::new());
     }
-    if let Option::Some(set) = map.var_to_subs.get_mut(&var){
+    if let Option::Some(set) = map.get_mut(&var){
         set.insert((subs, depth));
     }
     else{
@@ -556,44 +567,41 @@ fn insert_pair(
 }
 
 fn contains_var(
-    map: &DoubleIndexedMap,
+    map: &VarMap,
     var: &IdVar,
 ) -> bool {
-    map.var_to_subs.contains_key(var)
+    map.contains_key(var)
 }
 
-fn contains_subs(
-    map: &DoubleIndexedMap,
-    subs: &IdSubs,
+fn contains_subs_of_var(
+    map: &VarMap,
+    subs_depth: &(IdSubs, u32),
+    var: &IdVar,
 ) -> bool {
-    map.subs_to_var.contains_key(subs)
+    if let Option::Some(set_ref) = map.get(var){
+        set_ref.contains(subs_depth)
+    }
+    else{
+        false
+    }
+    
 }
 
 fn get_var_content(
-    map: &DoubleIndexedMap,
+    map: &VarMap,
     var: IdVar,
 ) -> Option<&HashSet<(IdSubs, u32)>> {
-    map.var_to_subs.get(&var)
-}
-
-fn get_subs_content(
-    map: &DoubleIndexedMap,
-    subs: IdVar,
-) -> Option<&(IdVar, u32)> {
-    map.subs_to_var.get(&subs)
+    map.get(&var)
 }
 
 /// Removes all the information related to the variable
 /// If the variable was contained in the maps the set of
 /// substitutions that had to do with the variable is returned
 fn remove_var(
-    map: &mut DoubleIndexedMap,
+    map: &mut VarMap,
     var: IdVar,
 ) -> Option<HashSet<(IdSubs, u32)>> {
-    if let Option::Some(subs_set) = map.var_to_subs.remove(&var) {
-        for (subs, depth) in subs_set.iter() {
-            map.subs_to_var.remove(&subs);
-        }
+    if let Option::Some(subs_set) = map.remove(&var) {
         Option::Some(subs_set)
     }
     else{
@@ -601,34 +609,30 @@ fn remove_var(
     }
 }
 
-/// Removes all the information related to the substitution
-/// If the substitution was contained in the maps the variable
-/// of the substitutions returned. If the set of substitutions 
-/// for that variable ends up empty, the entry is removed
-fn remove_subs(
-    map: &mut DoubleIndexedMap,
-    subs: IdSubs,
-) -> Option<(IdVar,u32)> {
-    if let Option::Some((id_var, depth)) = map.subs_to_var.remove(&subs) {
-        if let Option::Some(subs_set) = map.var_to_subs.get_mut(&id_var){
-            let res = subs_set.remove(&(subs, depth));
-            // debug check if the substitution id was related to the variable
-            debug_assert!(res);
-            if subs_set.is_empty() {
-                map.var_to_subs.remove(&id_var);
-            }
+/// Removes a subsitution given the variable where it should be found and the
+/// depth at which it was made. If the set ends up empty it is removed
+/// 
+/// Panics
+/// --------
+/// If the set of the given variable doesn't contain the pair to be removed
+/// or the variable id is not contained in the map as a key
+fn remove_subs_of_var (
+    map: &mut VarMap,
+    var: &IdVar,
+    subs_depth: &(IdSubs, u32),
+) {
+    if let Option::Some(set_ref) = map.get_mut(var) {
+        assert!(set_ref.remove(subs_depth));
+        if set_ref.is_empty(){
+            map.remove(var);
         }
-        else{
-            unreachable!("Maps in DoubleIndexedMap are inconsistent")
-        }
-        Option::Some((id_var, depth))
     }
     else{
-        Option::None
+        assert!(false)
     }
 }
 
-/// Gets the resulting DoubleIndexedMap of non read variables 
+/// Gets the resulting VarMap of non read variables 
 /// to the right non read variables after the execution of both branches.
 /// It takes ownership of the second map and returns the result in the first 
 /// one. The criteria is the following:
@@ -642,9 +646,9 @@ fn remove_subs(
 /// of both sets of useless substitutions. The result is returned in the same
 /// way as previously mentioned. 
 fn merge_branches(
-    map: &mut DoubleIndexedMap,
+    map: &mut VarMap,
     useless_set: &mut Option<&mut HashSet<(IdSubs, u32)>>,
-    map2: DoubleIndexedMap,
+    map2: VarMap,
     useless_set2: Option<HashSet<(IdSubs, u32)>>,
     curr_depth: u32,
 ) {
@@ -656,25 +660,35 @@ fn merge_branches(
             *useless_set = Option::None;
         }
     }
-    // Find substitutions in this block or outer ones that should be 
-    // removed because it is not in both maps
-    let mut to_remove: Vec<IdSubs> = Vec::new();
-    for (id_subs, (_, depth)) in &map.subs_to_var{
-        if *depth <= curr_depth && !map2.subs_to_var.contains_key(&id_subs){
-            to_remove.push(*id_subs);
+
+    let mut to_remove: Vec<(IdVar,(IdSubs, u32))> = Vec::new();
+    for (id_var, set) in map.iter(){
+        for (id_subs, depth) in set.iter(){
+            // Find substitutions in this block or outer ones that should be 
+            // removed because it is not in both maps    
+            if *depth <= curr_depth &&
+                !contains_subs_of_var(
+                    &map2,
+                    &(*id_subs, *depth), 
+                    id_var)
+            {
+                    to_remove.push((*id_var,(*id_subs, *depth)));
+            }
         }
     }
     // Remove all that is to be removed
-    for subs in to_remove{
-        remove_subs(map, subs);
+    for (var, subs_depth) in to_remove{
+        remove_subs_of_var(map, &var, &subs_depth);
     }
 
-    for (id_subs, (id_var, depth)) in map2.subs_to_var{
-        // If this substitution is from an inner block
-        // it is non read no matter if it is not in the other map
-        // so the result must be the union
-        if depth > curr_depth{
-            insert_pair(map, id_var, id_subs, depth);
+    for (id_var, set) in &map2{
+        for (id_subs, depth) in set{
+            // If this substitution is from an inner block
+            // it is non read no matter if it is not in the other map
+            // so the result must be the union
+            if *depth > curr_depth{
+                insert_pair(map, *id_var, *id_subs, *depth);
+            }
         }
     }
 }
