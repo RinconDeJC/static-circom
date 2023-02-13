@@ -85,6 +85,8 @@ pub enum ReportCode {
     AnonymousCompError,
     TupleError,
     InvalidSignalTagAccess,
+    // TODO: preguntar por como poner los codigos de error
+    UselessSubstitution,
 }
 impl fmt::Display for ReportCode {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -171,7 +173,9 @@ impl fmt::Display for ReportCode {
             CustomGatesPragmaError => "CG04",
             CustomGatesVersionError => "CG05",
             AnonymousCompError => "TAC01",
-            TupleError => "TAC02"
+            TupleError => "TAC02",
+            // TODO: preguntar por como poner los codigos de error
+            UselessSubstitution => "????"
         };
         f.write_str(string_format)
     }
