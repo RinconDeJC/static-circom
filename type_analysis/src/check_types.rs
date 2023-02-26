@@ -133,7 +133,7 @@ fn function_semantic_analysis(
 }
 
 fn template_semantic_analyses(
-    program_archive: &ProgramArchive,
+    program_archive: &mut ProgramArchive,
     errors: &mut ReportCollection,
     warnings: &mut ReportCollection,
 ) {
@@ -149,5 +149,8 @@ fn template_semantic_analyses(
                 Result::Err(mut custom_gate_report) => errors.append(&mut custom_gate_report)
             }
         }
+    }
+    for template_data in program_archive.get_mut_templates().values_mut() {
+        warnings.append(&mut template_substitution_analysis(template_data));
     }
 }

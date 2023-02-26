@@ -5,6 +5,7 @@ use program_structure::error_definition::{Report, ReportCollection};
 use program_structure::file_definition;
 use program_structure::function_data::FunctionData;
 use program_structure::environment::VarEnvironment;
+use program_structure::template_data::TemplateData;
 use std::collections::HashSet;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -64,6 +65,7 @@ pub fn function_substitution_analysis(
         found_vars.add_variable(param, curr_var_id);
         curr_var_id += 1;
     }
+    println!("substitution analysis of function: {}", function_data.get_name());
     analyse_statement(
         body,
         &mut found_vars,
@@ -75,13 +77,50 @@ pub fn function_substitution_analysis(
         &mut final_result,
         &mut reports
     );
-    println!("Number of useless substitution detected: {}", final_result.len());
+    println!("Number of useless assignments detected in {}: {} out of {}", function_data.get_name(), final_result.len(), curr_subs_id);
     let mut_body = function_data.get_mut_body();
     curr_subs_id = 0;
     remove_useless_subs(mut_body, &mut curr_subs_id, &final_result, &mut reports);
-
+    println!("------------------");
     reports
 }
+
+pub fn template_substitution_analysis(
+    template_data: &mut TemplateData
+) -> ReportCollection {
+    let body = template_data.get_body();
+    let mut reports = Vec::new();
+    let mut return_set = HashSet::new();
+    let mut final_result = HashSet::new();
+    let mut found_vars = SubsEnvironment::new();
+    let mut non_read = VarMap::new();
+    let mut curr_var_id = 0;
+    let mut curr_subs_id = 0;
+    for param in template_data.get_name_of_params() {
+        found_vars.add_variable(param, curr_var_id);
+        curr_var_id += 1;
+    }
+    println!("substitution analysis of template: {}", template_data.get_name());
+    analyse_statement(
+        body,
+        &mut found_vars,
+        &mut curr_var_id, 
+        &mut non_read,
+        &mut curr_subs_id,
+        0,
+        &mut return_set,
+        &mut final_result,
+        &mut reports
+    );
+    println!("Number of useless assignments detected in {}: {} out of {}", template_data.get_name(), final_result.len(), curr_subs_id);
+    let mut_body = template_data.get_mut_body();
+    curr_subs_id = 0;
+    remove_useless_subs(mut_body, &mut curr_subs_id, &final_result, &mut reports);
+    println!("------------------");
+    reports
+}
+
+
 
 
 // ------------------------------------------------
@@ -125,20 +164,16 @@ fn analyse_statement(
             analyse_initialization_block(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports);
             println!("}}initialization block");
         }
-        Statement::Declaration {..} =>{
-            println!("declaration{{");
+        Statement::Declaration {name,..} =>{
+            println!("declaration of var {}", name);
             analyse_declaration(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports);
-            println!("}}declaration");
         }
-        Statement::Substitution {..} =>{
-            println!("subs{{");
+        Statement::Substitution {var, ..} =>{
+            println!("assignment of var {}", var);
             analyse_substitution(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports);
-            println!("}}subs");
         }
-        Statement::MultSubstitution {..} =>{
-            println!("mult subs{{");
-            analyse_mult_substitution(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports);
-            println!("}}mult subs");
+        Statement::UnderscoreSubstitution {..} =>{
+            analyse_underscore_subs(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports);
         }
         Statement::LogCall {..} =>{
             analyse_log_call(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports);
@@ -188,7 +223,7 @@ fn analyse_block(
                 reports);
         }
         // Mark as useless all the substitutions this block can decide about
-        split_useless_subs(return_set, depth, final_result);
+        split_useless_subs(return_set, depth, final_result, reports);
         // get outing block and check if there are useless substitutions still here
         let outing_block = found_vars.get_top_block();
         // A substitution of a variable that hasn't been read and whose variable's
@@ -212,6 +247,7 @@ fn analyse_block(
                     );
                     reports.push(warning);
                     final_result.insert(info.id);
+                    println!("DEBUG: assignment with id {} of variable {} asked to be removed", info.id, info.var_name);
                 }
             }
         }
@@ -225,6 +261,7 @@ fn split_useless_subs(
     partial_useless: &mut HashSet<SubsInfo>,
     depth: u32,
     final_result: &mut HashSet<IdSubs>,
+    reports: &mut ReportCollection,
 ) {
     let mut to_remove = Vec::new();
     for info in partial_useless.iter() {
@@ -233,7 +270,22 @@ fn split_useless_subs(
         // added to the final result and deleted from partial useless
         if info.depth >= depth {
             to_remove.push(info.clone());
+            // TODO: add warning properly
+            let mut warning = Report::warning(
+                String::from("Useless substitution"),
+                ReportCode::UselessSubstitution
+            );
+            warning.add_primary(
+                info.location.clone(),
+                info.file_id.unwrap(),
+                format!(
+                    "{} variable substitution found to be useless",
+                    info.var_name
+                )
+            );
+            reports.push(warning);
             final_result.insert(info.id);
+            println!("DEBUG: assignment with id {} of variable {} asked to be removed", info.id, info.var_name);
         }
         // If the substitution is done in an outer block
         // this block can't yet decide if it is usless, 
@@ -363,8 +415,12 @@ fn analyse_while(
             final_result,
             reports
         );
+        // condition will be evaluated again after a possible execution of the
+        // loop, so variables read in condition evaluation should be marked
+        // as read again
+        mark_read_vars(&read_vars, found_vars, non_read);
         
-        // This is the equivalt to en empty else case.
+        // This is the equivalent to en empty else case.
         // As the resulting while_useless_set is empty, there is no need
         // to extend return_set
         // Merging branches is still needed to keep coherent information
@@ -437,7 +493,7 @@ fn analyse_initialization_block(
                 reports);
         }
         // Mark as useless all the substitutions this block can decide about
-        split_useless_subs(return_set, depth, final_result);
+        split_useless_subs(return_set, depth, final_result, reports);
     } else {
         unreachable!()
     }
@@ -455,9 +511,11 @@ fn analyse_declaration(
     reports: &mut ReportCollection,
 ) {
     use Statement::Declaration;
-    if let Declaration { name, .. } = stmt {
-        found_vars.add_variable(name, *curr_var_id);
-        *curr_var_id += 1;
+    if let Declaration { name, xtype, .. } = stmt {
+        if let VariableType::Var = xtype{
+            found_vars.add_variable(name, *curr_var_id);
+            *curr_var_id += 1;
+        }
     } else {
         unreachable!()
     }
@@ -476,80 +534,83 @@ fn analyse_substitution(
 ) {
     use Statement::Substitution;
     if let Substitution { var, access, meta,rhe,.. } = stmt {
-        // DUDA: para comprobar si no hay accesos basta ver que 
-        //  access tiene longitud 0?
         let mut read_vars = HashSet::new();
         analyse_expression(rhe, &mut read_vars);
         // Process vars in expression
         mark_read_vars(&read_vars, found_vars, non_read);
-        // Only complete substitutions are considered in this analysis
-        if access.len() == 0 {
-            if let Option::Some(id) = found_vars.get_variable(var){
-                if let Option::Some(subs_set) = 
-                        get_var_content_mut(non_read, *id) 
-                {
-                    debug_assert!(!subs_set.is_empty());
-                    for info in subs_set.iter(){
-                        // If the substitution is from an outer block
-                        // this node can't decide if it useless in the final
-                        // result, so it is added in the set to be returned
-                        if info.depth < depth{
-                            // TODO: add debug warning properly
-                            let mut warning = Report::warning(
-                                String::from("Possible useless substitution"),
-                                ReportCode::UselessSubstitution
-                            );
-                            warning.add_primary(
-                                info.location.clone(),
-                                info.file_id.unwrap(),
-                                format!(
-                                    "DEBUG: {} var substitution suspected to be useless",
-                                    info.var_name
-                                )
-                            );
-                            reports.push(warning);
-                            return_set.insert(info.clone());
+        // Only complete substitutions of variables are considered in this analysis
+        if let TypeReduction::Variable = meta.get_type_knowledge().get_reduces_to(){
+            if access.len() == 0{
+                if let Option::Some(id) = found_vars.get_variable(var){
+                    if let Option::Some(subs_set) = 
+                            get_var_content_mut(non_read, *id) 
+                    {
+                        debug_assert!(!subs_set.is_empty());
+                        for info in subs_set.iter(){
+                            // If the substitution is from an outer block
+                            // this node can't decide if it useless in the final
+                            // result, so it is added in the set to be returned
+                            if info.depth < depth{
+                                // TODO: add debug warning properly
+                                /*
+                                let mut warning = Report::warning(
+                                    String::from("Possible useless substitution"),
+                                    ReportCode::UselessSubstitution
+                                );
+                                warning.add_primary(
+                                    info.location.clone(),
+                                    info.file_id.unwrap(),
+                                    format!(
+                                        "DEBUG: {} var assignment suspected to be useless",
+                                        info.var_name
+                                    )
+                                );
+                                reports.push(warning);
+                                */
+                                return_set.insert(info.clone());
+                            }
+                            // If the substitution was made in this block or in an
+                            // inner one, it can be marked as useless in the final
+                            // result
+                            else{
+                                // TODO: add warning properly
+                                let mut warning = Report::warning(
+                                    String::from("Useless substitution"),
+                                    ReportCode::UselessSubstitution
+                                );
+                                warning.add_primary(
+                                    info.location.clone(),
+                                    info.file_id.unwrap(),
+                                    format!(
+                                        "{} variable substitution found to be useless",
+                                        info.var_name
+                                    )
+                                );
+                                reports.push(warning);
+                                final_result.insert(info.id);
+                                println!("DEBUG: assignment with id {} of variable {} asked to be removed", info.id, info.var_name);
+                            }
                         }
-                        // If the substitution was made in this block or in an
-                        // inner one, it can be marked as useless in the final
-                        // result
-                        else{
-                            // TODO: add warning properly
-                            let mut warning = Report::warning(
-                                String::from("Useless substitution"),
-                                ReportCode::UselessSubstitution
-                            );
-                            warning.add_primary(
-                                info.location.clone(),
-                                info.file_id.unwrap(),
-                                format!(
-                                    "{} variable substitution found to be useless",
-                                    info.var_name
-                                )
-                            );
-                            reports.push(warning);
-                            final_result.insert(info.id);
-                        }
+                        // delete every previous non read substitution
+                        subs_set.clear();
                     }
-                    // delete every previous non read substitution
-                    subs_set.clear();
+                    // Add this substitution to non_read information
+                    insert_subs(
+                        non_read,
+                        *id, 
+                        &SubsInfo { 
+                            id:*curr_subs_id,
+                            var_name:var.clone(),
+                            depth:depth,
+                            location:meta.location.clone(),
+                            file_id:meta.file_id.clone()
+                        }
+                    );
+                    *curr_subs_id += 1;
                 }
-                // Add this substitution to non_read information
-                insert_subs(
-                    non_read,
-                    *id, 
-                    &SubsInfo { 
-                        id:*curr_subs_id,
-                        var_name:var.clone(),
-                        depth:depth,
-                        location:meta.location.clone(),
-                        file_id:meta.file_id.clone()
-                    }
-                );
-                *curr_subs_id += 1;
-            }
-            else{
-                unreachable!("Found variable not recognized in environment")
+                else{
+                    unreachable!("Found variable not recognized in environment")
+                }
             }
         }
         // else, i.e., this is not a full substitution
@@ -562,8 +623,7 @@ fn analyse_substitution(
     }
 }
 
- // DUDA: Este hace falta?
- fn analyse_mult_substitution(
+fn analyse_underscore_subs(
     stmt: &Statement,
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
@@ -574,10 +634,11 @@ fn analyse_substitution(
     final_result: &mut HashSet<IdSubs>,
     reports: &mut ReportCollection,
 ) {
-    use Statement::InitializationBlock;
-    if let InitializationBlock { initializations, .. } = stmt {
-        // TODO
-        panic!("Not implemented")
+    use Statement::UnderscoreSubstitution;
+    if let UnderscoreSubstitution { rhe, .. } = stmt {
+        let mut read_vars = HashSet::new();
+        analyse_expression(rhe, &mut read_vars);
+        mark_read_vars(&read_vars, found_vars, non_read);
     } else {
         unreachable!()
     }
@@ -646,7 +707,7 @@ fn mark_read_vars(
             remove_var(non_read, *id);
         }
         else{
-            unreachable!("Found variable not recognized in environment")
+            println!("DEBUG: check {} is not a variable but a declared component or signal", var);
         }
     }
 }
@@ -840,7 +901,23 @@ fn merge_branches(
                 info.depth
             );
             to_remove_from_set.push(info.clone());
+            // TODO: add warning properly
+            let mut warning = Report::warning(
+                String::from("Useless substitution"),
+                ReportCode::UselessSubstitution
+            );
+            warning.add_primary(
+                info.location.clone(),
+                info.file_id.unwrap(),
+                format!(
+                    "{} variable substitution found to be useless",
+                    info.var_name
+                )
+            );
+            reports.push(warning);
             final_result.insert(info.id);
+            println!("DEBUG: assignment with id {} of variable {} asked to be removed", info.id, info.var_name);
+
         }
     }
     for info in to_remove_from_set{
@@ -926,21 +1003,32 @@ fn remove_useless_subs(
             );
             false
         }
-        Statement::Substitution {access,..} =>{
+        Statement::Substitution {access,var,..} =>{
             // Check if its corresponding id is in final_result
             if access.len() == 0{
                 let is_useless = final_result.contains(curr_subs_id);
                 *curr_subs_id += 1;
+                if is_useless{
+                    println!("DEBUG: removing assignment with id {} of var {}", *curr_subs_id-1, var);
+                }
+                else{
+                    println!("DEBUG: assignment with id {} of var {} allowed to be kept", *curr_subs_id-1, var);
+                }
                 is_useless
             }
             else{
                 false
             }
-            
-        }
-        Statement::MultSubstitution {..} =>{
-            // analyse_mult_substitution(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports)
-            // true? false?
+        }          
+        Statement::InitializationBlock {initializations,.. } =>{
+            for ini in initializations{
+                remove_useless_subs(
+                    ini, 
+                    curr_subs_id, 
+                    final_result, 
+                    reports
+                );
+            }
             false
         }
         _ => {false}
