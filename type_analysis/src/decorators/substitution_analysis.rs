@@ -329,13 +329,12 @@ fn analyse_if_else(
             final_result,
             reports
         );
-        let mut else_useless_set = HashSet::new();
         if let Option::Some(s) = else_case {
             // Clone the non_read map so no collision occur with an
             // execution that this statement shouldn't be able to see
             // No collisions occur with the Environment as they are prepared
             // for this use (assuming there is a block next)
-            let mut else_usless_set = HashSet::new();
+            let mut else_useless_set = HashSet::new();
             analyse_statement(
                 s, 
                 found_vars, 
@@ -351,7 +350,7 @@ fn analyse_if_else(
                 non_read,
                 &mut if_useless_set,
                 &mut non_read_copy, 
-                &mut else_usless_set, 
+                &mut else_useless_set, 
                 depth,
                 final_result,
                 reports
