@@ -435,6 +435,36 @@ fn analyse_while(
             reports
         );
         debug_assert!(while_useless_set.is_empty());
+        // Repeat the analysis so fixed point is reached
+        // Make a copy of non_read_variables before analysing both statements
+        let mut non_read_copy = non_read.clone();
+        analyse_statement(
+            stmt, 
+            found_vars, 
+            curr_var_id, 
+            non_read, 
+            curr_subs_id,
+            depth, 
+            &mut while_useless_set,
+            final_result,
+            reports
+        );        
+        // This is the equivalent to en empty else case.
+        // As the resulting while_useless_set is empty, there is no need
+        // to extend return_set
+        // Merging branches is still needed to keep coherent information
+        // about non read variables
+        merge_branches(
+            non_read,
+            &mut while_useless_set,
+            &mut non_read_copy, 
+            &mut HashSet::new(), 
+            depth,
+            final_result,
+            reports
+        );
+        debug_assert!(while_useless_set.is_empty());
+
     } else {
         unreachable!()
     }
