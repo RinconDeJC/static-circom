@@ -9,7 +9,7 @@ use program_structure::template_data::TemplateData;
 use std::collections::HashSet;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-type IdSubs = u32;
+type IdSubs = usize;
 type IdVar = u32;
 type SubsEnvironment = VarEnvironment<IdVar>;
 // type SubsMap = HashMap<IdSubs, (IdVar, u32)>;
@@ -60,7 +60,6 @@ pub fn function_substitution_analysis(
     let mut found_vars = SubsEnvironment::new();
     let mut non_read = VarMap::new();
     let mut curr_var_id = 0;
-    let mut curr_subs_id = 0;
     for param in function_data.get_name_of_params() {
         found_vars.add_variable(param, curr_var_id);
         curr_var_id += 1;
@@ -71,16 +70,14 @@ pub fn function_substitution_analysis(
         &mut found_vars,
         &mut curr_var_id, 
         &mut non_read,
-        &mut curr_subs_id,
         0,
         &mut return_set,
         &mut final_result,
         &mut reports
     );
-    println!("Number of useless assignments detected in {}: {} out of {}", function_data.get_name(), final_result.len(), curr_subs_id);
+    println!("Number of useless assignments detected in {}: {}", function_data.get_name(), final_result.len());
     let mut_body = function_data.get_mut_body();
-    curr_subs_id = 0;
-    remove_useless_subs(mut_body, &mut curr_subs_id, &final_result, &mut reports);
+    remove_useless_subs(mut_body, &final_result, &mut reports);
     println!("------------------");
     reports
 }
@@ -95,7 +92,6 @@ pub fn template_substitution_analysis(
     let mut found_vars = SubsEnvironment::new();
     let mut non_read = VarMap::new();
     let mut curr_var_id = 0;
-    let mut curr_subs_id = 0;
     for param in template_data.get_name_of_params() {
         found_vars.add_variable(param, curr_var_id);
         curr_var_id += 1;
@@ -106,16 +102,14 @@ pub fn template_substitution_analysis(
         &mut found_vars,
         &mut curr_var_id, 
         &mut non_read,
-        &mut curr_subs_id,
         0,
         &mut return_set,
         &mut final_result,
         &mut reports
     );
-    println!("Number of useless assignments detected in {}: {} out of {}", template_data.get_name(), final_result.len(), curr_subs_id);
+    println!("Number of useless assignments detected in {}: {}", template_data.get_name(), final_result.len());
     let mut_body = template_data.get_mut_body();
-    curr_subs_id = 0;
-    remove_useless_subs(mut_body, &mut curr_subs_id, &final_result, &mut reports);
+    remove_useless_subs(mut_body, &final_result, &mut reports);
     println!("------------------");
     reports
 }
@@ -132,7 +126,6 @@ fn analyse_statement(
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut u32,
     non_read: &mut VarMap,
-    curr_subs_id: &mut IdSubs,
     depth: u32,
     return_set: &mut HashSet<SubsInfo>,
     final_result: &mut HashSet<IdSubs>,
@@ -141,45 +134,45 @@ fn analyse_statement(
     match stmt{
         Statement::Block {..}=> {
             println!("block{{");
-            analyse_block(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth + 1, return_set, final_result, reports);
+            analyse_block(stmt, found_vars, curr_var_id,non_read, depth + 1, return_set, final_result, reports);
             println!("}}block");
         }
         Statement::IfThenElse {..} =>{
             println!("if else{{");
-            analyse_if_else(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports);
+            analyse_if_else(stmt, found_vars, curr_var_id,non_read, depth, return_set, final_result, reports);
             println!("}}if else");
         }
         Statement::While {..} =>{
             println!("while{{");
-            analyse_while(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports);
+            analyse_while(stmt, found_vars, curr_var_id,non_read, depth, return_set, final_result, reports);
             println!("}}while");
         }
         Statement::Return {..} =>{
             println!("return{{");
-            analyse_return(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports);
+            analyse_return(stmt, found_vars, curr_var_id,non_read, depth, return_set, final_result, reports);
             println!("}}return");
         }
         Statement::InitializationBlock {..} =>{
             println!("initialization block{{");
-            analyse_initialization_block(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports);
+            analyse_initialization_block(stmt, found_vars, curr_var_id,non_read, depth, return_set, final_result, reports);
             println!("}}initialization block");
         }
         Statement::Declaration {name,..} =>{
             println!("declaration of var {}", name);
-            analyse_declaration(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports);
+            analyse_declaration(stmt, found_vars, curr_var_id,non_read, depth, return_set, final_result, reports);
         }
         Statement::Substitution {var, ..} =>{
             println!("assignment of var {}", var);
-            analyse_substitution(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports);
+            analyse_substitution(stmt, found_vars, curr_var_id,non_read, depth, return_set, final_result, reports);
         }
         Statement::UnderscoreSubstitution {..} =>{
-            analyse_underscore_subs(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports);
+            analyse_underscore_subs(stmt, found_vars, curr_var_id,non_read, depth, return_set, final_result, reports);
         }
         Statement::LogCall {..} =>{
-            analyse_log_call(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports);
+            analyse_log_call(stmt, found_vars, curr_var_id,non_read, depth, return_set, final_result, reports);
         }
         Statement::Assert {..} =>{
-            analyse_assert(stmt, found_vars, curr_var_id,non_read, curr_subs_id, depth, return_set, final_result, reports);
+            analyse_assert(stmt, found_vars, curr_var_id,non_read, depth, return_set, final_result, reports);
         }
         _ => {}
 
@@ -196,7 +189,6 @@ fn analyse_block(
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
     non_read: &mut VarMap,
-    curr_subs_id: &mut IdSubs,
     depth: u32,
     return_set: &mut HashSet<SubsInfo>,
     final_result: &mut HashSet<IdSubs>,
@@ -216,7 +208,6 @@ fn analyse_block(
                 found_vars,
                 curr_var_id,
                 non_read,
-                curr_subs_id,
                 depth,
                 return_set,
                 final_result,
@@ -302,7 +293,6 @@ fn analyse_if_else(
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
     non_read: &mut VarMap,
-    curr_subs_id: &mut IdSubs,
     depth: u32,
     return_set: &mut HashSet<SubsInfo>,
     final_result: &mut HashSet<IdSubs>,
@@ -323,7 +313,6 @@ fn analyse_if_else(
             found_vars, 
             curr_var_id, 
             non_read, 
-            curr_subs_id,
             depth, 
             &mut if_useless_set,
             final_result,
@@ -340,7 +329,6 @@ fn analyse_if_else(
                 found_vars, 
                 curr_var_id, 
                 &mut non_read_copy, 
-                curr_subs_id,
                 depth,
                 &mut else_useless_set,
                 final_result,
@@ -387,7 +375,6 @@ fn analyse_while(
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
     non_read: &mut VarMap,
-    curr_subs_id: &mut IdSubs,
     depth: u32,
     return_set: &mut HashSet<SubsInfo>,
     final_result: &mut HashSet<IdSubs>,
@@ -408,7 +395,6 @@ fn analyse_while(
             found_vars, 
             curr_var_id, 
             non_read, 
-            curr_subs_id,
             depth, 
             &mut while_useless_set,
             final_result,
@@ -436,13 +422,18 @@ fn analyse_while(
         debug_assert!(while_useless_set.is_empty());
         // Repeat the analysis so fixed point is reached
         // Make a copy of non_read_variables before analysing both statements
+        // TODO: PELIGRO: Este codigo rompe el programa. Al lanzar un segundo
+        // análisis no se está alcanzando el punto fijo, pues non_read se queda
+        // con el valor de una única iteración. Hay que ver cómo concatenar bien
+        // las estructuras non_read. Además al pasar dos veces por una asignación
+        // se le asignan ids únicos cada vez rompiendo probablemente la forma
+        // en que se asignan, pues a una misma asignación se le dan dos distintos.
         let mut non_read_copy = non_read.clone();
         analyse_statement(
             stmt, 
             found_vars, 
             curr_var_id, 
             non_read, 
-            curr_subs_id,
             depth, 
             &mut while_useless_set,
             final_result,
@@ -474,7 +465,6 @@ fn analyse_return(
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
     non_read: &mut VarMap,
-    curr_subs_id: &mut u32,
     depth: u32,
     return_set: &mut HashSet<SubsInfo>,
     final_result: &mut HashSet<IdSubs>,
@@ -495,7 +485,6 @@ fn analyse_initialization_block(
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
     non_read: &mut VarMap,
-    curr_subs_id: &mut IdSubs,
     depth: u32,
     return_set: &mut HashSet<SubsInfo>,
     final_result: &mut HashSet<IdSubs>,
@@ -515,7 +504,6 @@ fn analyse_initialization_block(
                 found_vars,
                 curr_var_id,
                 non_read,
-                curr_subs_id,
                 depth,
                 return_set,
                 final_result,
@@ -533,7 +521,6 @@ fn analyse_declaration(
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
     non_read: &mut VarMap,
-    curr_subs_id: &mut u32,
     depth: u32,
     return_set: &mut HashSet<SubsInfo>,
     final_result: &mut HashSet<IdSubs>,
@@ -555,7 +542,6 @@ fn analyse_substitution(
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
     non_read: &mut VarMap,
-    curr_subs_id: &mut IdSubs,
     depth: u32,
     return_set: &mut HashSet<SubsInfo>,
     final_result: &mut HashSet<IdSubs>,
@@ -628,14 +614,13 @@ fn analyse_substitution(
                         non_read,
                         *id, 
                         &SubsInfo { 
-                            id:*curr_subs_id,
+                            id:meta.elem_id,
                             var_name:var.clone(),
                             depth:depth,
                             location:meta.location.clone(),
                             file_id:meta.file_id.clone()
                         }
                     );
-                    *curr_subs_id += 1;
                 }
                 else{
                     unreachable!("Found variable not recognized in environment")
@@ -657,7 +642,6 @@ fn analyse_underscore_subs(
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
     non_read: &mut VarMap,
-    curr_subs_id: &mut IdSubs,
     depth: u32,
     return_set: &mut HashSet<SubsInfo>,
     final_result: &mut HashSet<IdSubs>,
@@ -678,7 +662,6 @@ fn analyse_log_call(
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
     non_read: &mut VarMap,
-    curr_subs_id: &mut u32,
     depth: u32,
     return_set: &mut HashSet<SubsInfo>,
     final_result: &mut HashSet<IdSubs>,
@@ -703,7 +686,6 @@ fn analyse_assert(
     found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
     non_read: &mut VarMap,
-    curr_subs_id: &mut IdSubs,
     depth: u32,
     return_set: &mut HashSet<SubsInfo>,
     final_result: &mut HashSet<IdSubs>,
@@ -991,7 +973,6 @@ fn merge_branches(
 
 fn remove_useless_subs(
     stmt: &mut Statement,
-    curr_subs_id: &mut IdSubs, 
     final_result: &HashSet<IdSubs>,
     reports: &mut ReportCollection,
 ) -> bool{
@@ -1000,7 +981,6 @@ fn remove_useless_subs(
             stmts.retain_mut(|s| 
                 !remove_useless_subs(
                     s, 
-                    curr_subs_id, 
                     final_result, 
                     reports)
                 );
@@ -1009,14 +989,12 @@ fn remove_useless_subs(
         Statement::IfThenElse {if_case, else_case,..} =>{
             remove_useless_subs(
                 if_case, 
-                curr_subs_id, 
                 final_result, 
                 reports
             );
             if let Option::Some(stmt_else) = else_case{
                 remove_useless_subs(
                     stmt_else, 
-                    curr_subs_id, 
                     final_result, 
                     reports
                 );
@@ -1026,22 +1004,20 @@ fn remove_useless_subs(
         Statement::While {stmt,..} =>{
             remove_useless_subs(
                 stmt, 
-                curr_subs_id, 
                 final_result, 
                 reports
             );
             false
         }
-        Statement::Substitution {access,var,..} =>{
+        Statement::Substitution {access,var,meta,..} =>{
             // Check if its corresponding id is in final_result
             if access.len() == 0{
-                let is_useless = final_result.contains(curr_subs_id);
-                *curr_subs_id += 1;
+                let is_useless = final_result.contains(&meta.elem_id);
                 if is_useless{
-                    println!("DEBUG: removing assignment with id {} of var {}", *curr_subs_id-1, var);
+                    println!("DEBUG: removing assignment with id {} of var {}", meta.elem_id, var);
                 }
                 else{
-                    println!("DEBUG: assignment with id {} of var {} allowed to be kept", *curr_subs_id-1, var);
+                    println!("DEBUG: assignment with id {} of var {} allowed to be kept", meta.elem_id, var);
                 }
                 is_useless
             }
@@ -1053,7 +1029,6 @@ fn remove_useless_subs(
             for ini in initializations{
                 remove_useless_subs(
                     ini, 
-                    curr_subs_id, 
                     final_result, 
                     reports
                 );
