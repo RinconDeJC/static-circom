@@ -105,9 +105,8 @@ pub enum ReportCode {
     UnderscoreWithNoSignalWarning,
     TupleError,
     InvalidSignalTagAccess,
-    // TODO: preguntar por como poner los codigos de error
-    UselessSubstitution,
     UninitializedComponent,
+    UselessSubstitution,
 }
 
 impl fmt::Display for ReportCode {
@@ -214,9 +213,8 @@ impl fmt::Display for ReportCode {
             CustomGatesVersionError => "CG05",
             AnonymousCompError => "TAC01",
             TupleError => "TAC02",
-            // TODO: preguntar por como poner los codigos de error
-            UselessSubstitution => "????",
             UnderscoreWithNoSignalWarning => "TAC03",
+            UselessSubstitution => "????",
         };
         f.write_str(string_format)
     }
