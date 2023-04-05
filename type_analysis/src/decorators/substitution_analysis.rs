@@ -41,7 +41,7 @@ impl Eq for SubsInfo {}
 /// 
 /// A subsitution over a variable is considered useless if a valid 
 /// substitution is performed on that same variable before it has been read in
-/// between ot the variable goes out of scope before being read.
+/// between or the variable goes out of scope before being read.
 /// 
 /// A substitution is considered, at the moment, valid, if no access is 
 /// performed during the substitution, e.g, 
@@ -52,7 +52,7 @@ impl Eq for SubsInfo {}
 /// ```
 pub fn function_substitution_analysis(
     function_data: &mut FunctionData
-) {// -> ReportCollection {
+) -> ReportCollection {
     let body = function_data.get_body();
     let mut unknown = VarMap::new();
     let mut useless = HashSet::new();
@@ -72,7 +72,11 @@ pub fn function_substitution_analysis(
         &mut curr_var_id,
         body,
     );
-    println!("Number of useless assignments detected in {}: {}", function_data.get_name(), useless.len());
+    debug_assert!(unknown.is_empty());
+    println!("Number of useless assignments detected in function {}: {}", function_data.get_name(), useless.len());
+    println!("Number of useful assignments detected in function {}: {}", function_data.get_name(), useful.len());
+    println!("Number of unknown assignments detected in function {}: {}", function_data.get_name(), unknown.len());
+    let mut reports = ReportCollection::new();
     let mut_body = function_data.get_mut_body();
     let mut tmp_reports = ReportCollection::new();
     let mut final_result = HashSet::new();
@@ -81,12 +85,13 @@ pub fn function_substitution_analysis(
     }
     remove_useless_subs(mut_body, &final_result, &mut tmp_reports);
     println!("------------------");
-    //reports
+    // TODO: add proper warnings
+    reports
 }
 
 pub fn template_substitution_analysis(
     template_data: &mut TemplateData
-) {//-> ReportCollection {
+) -> ReportCollection {
     let body = template_data.get_body();
     let mut unknown = VarMap::new();
     let mut useless = HashSet::new();
@@ -106,7 +111,11 @@ pub fn template_substitution_analysis(
         &mut curr_var_id,
         body,
     );
-    println!("Number of useless assignments detected in {}: {}", template_data.get_name(), useless.len());
+    debug_assert!(unknown.is_empty());
+    println!("Number of useless assignments detected in template {}: {}", template_data.get_name(), useless.len());
+    println!("Number of useful assignments detected in template {}: {}", template_data.get_name(), useful.len());
+    println!("Number of unknown assignments detected in template {}: {}", template_data.get_name(), unknown.len());
+    let mut reports = ReportCollection::new();
     let mut_body = template_data.get_mut_body();
     let mut tmp_reports = ReportCollection::new();
     let mut final_result = HashSet::new();
@@ -115,7 +124,8 @@ pub fn template_substitution_analysis(
     }
     remove_useless_subs(mut_body, &final_result, &mut tmp_reports);
     println!("------------------");
-    //reports
+    // TODO: add proper warnings
+    reports
 }
 
 
@@ -129,13 +139,13 @@ fn analyse_statement(
     unknown: &mut VarMap,
     useful: &mut HashSet<SubsInfo>,
     useless: &mut HashSet<SubsInfo>,
-    found_vars: &SubsEnvironment,
+    found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
     stmt: &Statement, 
 ) { 
     match stmt{
         Statement::Block {..}=> {
-            println!("block{{");
+            // println!("block{{");
             analyse_block(
                 unknown,
                 useful,
@@ -144,10 +154,10 @@ fn analyse_statement(
                 curr_var_id,
                 stmt,
             );
-            println!("}}block");
+            // println!("}}block");
         }
         Statement::IfThenElse {..} =>{
-            println!("if else{{");
+            // println!("if else{{");
             analyse_if_else(
                 unknown,
                 useful,
@@ -156,10 +166,10 @@ fn analyse_statement(
                 curr_var_id,
                 stmt,
             );            
-            println!("}}if else");
+            // println!("}}if else");
         }
         Statement::While {..} =>{
-            println!("while{{");
+            // println!("while{{");
             analyse_while(
                 unknown,
                 useful,
@@ -168,23 +178,22 @@ fn analyse_statement(
                 curr_var_id,
                 stmt,
             );            
-            println!("}}while");
+            // println!("}}while");
         }
         Statement::Return {value,..} =>{
-            println!("return{{");
+            // println!("return{{");
             let mut read_vars = HashSet::new();
             analyse_expression(value, &mut read_vars);
             analyse_reader(
                 unknown,
                 useful,
-                useless,
                 found_vars,
                 &read_vars,
             );
-            println!("}}return");
+            // println!("}}return");
         }
         Statement::InitializationBlock {..} =>{
-            println!("initialization block{{");
+            // println!("initialization block{{");
             analyse_initialization_block(
                 unknown,
                 useful,
@@ -193,38 +202,45 @@ fn analyse_statement(
                 curr_var_id,
                 stmt,
             );
-            println!("}}initialization block");
+            // println!("}}initialization block");
         }
         Statement::Declaration {name,..} =>{
-            println!("declaration of var {}", name);
+            // println!("declaration of var {}", name);
             analyse_declaration(
-                unknown,
-                useful,
-                useless,
                 found_vars,
                 curr_var_id,
                 stmt,
             );
         }
-        Statement::Substitution {var, ..} =>{
-            println!("assignment of var {}", var);
+        Statement::Substitution {var, meta, ..} =>{
+            // println!("assignment with id {} of var {}", meta.elem_id, var);
             analyse_assignment(
                 unknown,
                 useful,
                 useless,
                 found_vars,
-                curr_var_id,
                 stmt,
             );
         }
         Statement::UnderscoreSubstitution {..} =>{
-            analyse_initialization_block(
+            analyse_underscore_subs(
                 unknown,
                 useful,
                 useless,
                 found_vars,
                 curr_var_id,
                 stmt,
+            );
+        }
+        Statement::ConstraintEquality {lhe, rhe, ..} =>{
+            let mut read_vars = HashSet::new();
+            analyse_expression(lhe, &mut read_vars);
+            analyse_expression(rhe, &mut read_vars);
+            analyse_reader(
+                unknown,
+                useful,
+                found_vars,
+                &read_vars,
             );
         }
         Statement::LogCall {args, ..} =>{
@@ -237,7 +253,6 @@ fn analyse_statement(
             analyse_reader(
                 unknown,
                 useful,
-                useless,
                 found_vars,
                 &read_vars,
             );
@@ -248,12 +263,11 @@ fn analyse_statement(
             analyse_reader(
                 unknown,
                 useful,
-                useless,
                 found_vars,
                 &read_vars,
             );
         }
-        _ => {}
+        _ => {unreachable!();}
 
     }
 }
@@ -261,8 +275,7 @@ fn analyse_statement(
 fn analyse_reader(
     unknown: &mut VarMap,
     useful: &mut HashSet<SubsInfo>,
-    useless: &mut HashSet<SubsInfo>,
-    found_vars: &SubsEnvironment,
+    found_vars: &mut SubsEnvironment,
     read_vars: &HashSet<String>,
 ) {
     // NewUseful = {(x,id) \in Unknown : x \in read_vars}
@@ -285,8 +298,7 @@ fn analyse_assignment(
     unknown: &mut VarMap,
     useful: &mut HashSet<SubsInfo>,
     useless: &mut HashSet<SubsInfo>,
-    found_vars: &SubsEnvironment,
-    curr_var_id: &mut IdVar,
+    found_vars: &mut SubsEnvironment,
     stmt: &Statement,  
 ) {
     use Statement::Substitution;
@@ -296,7 +308,7 @@ fn analyse_assignment(
         // Useful = Useful \cup NewUseful
         let mut rhe_vars = HashSet::new();
         analyse_expression(rhe, &mut rhe_vars);
-        analyse_reader(unknown, useful, useless, found_vars, &rhe_vars);
+        analyse_reader(unknown, useful, found_vars, &rhe_vars);
 
         if let TypeReduction::Variable = meta.get_type_knowledge().get_reduces_to(){
             if access.len() == 0 {
@@ -348,7 +360,7 @@ fn analyse_block(
     unknown: &mut VarMap,
     useful: &mut HashSet<SubsInfo>,
     useless: &mut HashSet<SubsInfo>,
-    found_vars: &SubsEnvironment,
+    found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
     stmt: &Statement,
 ) {
@@ -372,9 +384,11 @@ fn analyse_block(
         // Useless = Useless \cup NewUseless
         for var_id in outing_block.values() {
             if let Option::Some(info_set) = unknown.remove(var_id){
-                useful.extend(info_set);
+                useless.extend(info_set);
             }
         }
+        // Remove outing block
+        found_vars.remove_variable_block();
     }
     else{
         unreachable!();
@@ -391,15 +405,15 @@ fn merge_branches(
 ) {
     // Useful = Useful1 \cup Useful2, 
     //   but we put into Useful1 to avoid creating more sets
-    useful1.extend(*useful2);
+    useful1.extend(useful2.iter().cloned());
     // Unknown = Unknown1 \cup Unknown2,
     for (id_var, set_info2) in unknown2.iter() {
         if let Option::Some(set_info1) = unknown1.get_mut(id_var) {
-            set_info1.extend(*set_info2);
+            set_info1.extend(set_info2.iter().cloned());
         }
     }
     // Useless = Useless1 \cup Useless2
-    useless1.extend(*useless2);
+    useless1.extend(useless2.iter().cloned());
     // Unknown = Unknown \ Useful
     // Useless = Useless \ Useful
     for info in useful1.iter() {
@@ -423,7 +437,7 @@ fn analyse_if_else(
     unknown: &mut VarMap,
     useful: &mut HashSet<SubsInfo>,
     useless: &mut HashSet<SubsInfo>,
-    found_vars: &SubsEnvironment,
+    found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
     stmt: &Statement,
 ) {
@@ -431,7 +445,7 @@ fn analyse_if_else(
     if let IfThenElse { cond, if_case, else_case, .. } = stmt {
         let mut read_vars = HashSet::new();
         analyse_expression(cond, &mut read_vars);
-        analyse_reader(unknown, useful, useless, found_vars, &read_vars);
+        analyse_reader(unknown, useful, found_vars, &read_vars);
 
         // Make copies of sets
         let mut unknown_else = unknown.clone();
@@ -471,7 +485,7 @@ fn analyse_while(
     unknown: &mut VarMap,
     useful: &mut HashSet<SubsInfo>,
     useless: &mut HashSet<SubsInfo>,
-    found_vars: &SubsEnvironment,
+    found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
     stmt_w: &Statement,
 ) {
@@ -480,7 +494,7 @@ fn analyse_while(
         let mut read_vars = HashSet::new();
         // 0 iterations
         analyse_expression(cond, &mut read_vars);
-        analyse_reader(unknown, useful, useless, found_vars, &read_vars);
+        analyse_reader(unknown, useful, found_vars, &read_vars);
 
         // Make copies of sets
         let mut unknown_1 = unknown.clone();
@@ -494,7 +508,7 @@ fn analyse_while(
             found_vars, 
             curr_var_id, 
             stmt);
-        analyse_reader(&mut unknown_1, &mut useful_1, &mut useless_1, found_vars, &read_vars);    
+        analyse_reader(&mut unknown_1, &mut useful_1, found_vars, &read_vars);    
         
         // Make copies of sets
         let mut unknown_2 = unknown_1.clone();
@@ -508,7 +522,7 @@ fn analyse_while(
             found_vars, 
             curr_var_id,
             stmt);
-        analyse_reader(&mut unknown_2, &mut useful_2, &mut useless_2, found_vars, &read_vars);    
+        analyse_reader(&mut unknown_2, &mut useful_2, found_vars, &read_vars);    
         
         // merge 0 and 1 iterations
         merge_branches(
@@ -547,13 +561,12 @@ fn analyse_while(
 // );
 // reports.push(warning);
 // final_result.insert(info.id);
-// println!("DEBUG: assignment with id {} of variable {} asked to be removed", info.id, info.var_name);
 
 fn analyse_initialization_block(
     unknown: &mut VarMap,
     useful: &mut HashSet<SubsInfo>,
     useless: &mut HashSet<SubsInfo>,
-    found_vars: &SubsEnvironment,
+    found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar, 
     stmt_i: &Statement,
 ) {
@@ -575,10 +588,7 @@ fn analyse_initialization_block(
 }
 
 fn analyse_declaration(
-    unknown: &mut VarMap,
-    useful: &mut HashSet<SubsInfo>,
-    useless: &mut HashSet<SubsInfo>,
-    found_vars: &SubsEnvironment,
+    found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
     stmt: &Statement,
 ) {
@@ -586,6 +596,7 @@ fn analyse_declaration(
     if let Declaration { name, xtype, .. } = stmt {
         if let VariableType::Var = xtype{
             found_vars.add_variable(name, *curr_var_id);
+            // println!("DEBUG: Var {} -> id {}", name, *curr_var_id);
             *curr_var_id += 1;
         }
     } else {
@@ -597,7 +608,7 @@ fn analyse_underscore_subs(
     unknown: &mut VarMap,
     useful: &mut HashSet<SubsInfo>,
     useless: &mut HashSet<SubsInfo>,
-    found_vars: &SubsEnvironment,
+    found_vars: &mut SubsEnvironment,
     curr_var_id: &mut IdVar,
     stmt: &Statement,
 ) {
@@ -620,11 +631,16 @@ fn analyse_expression(
     read_vars: &mut HashSet<String>,
 ) {
     match exp{
-        Expression::Variable{name,meta,..} => {
+        Expression::Variable{name,meta,access,..} => {
             if let TypeReduction::Variable = 
                 meta.get_type_knowledge().get_reduces_to()
             {
                 read_vars.insert(name.clone());
+            }
+            for acc_exp in access.iter(){
+                if let Access::ArrayAccess(index) = acc_exp{
+                    analyse_expression(index, read_vars);
+                }
             }
         },
         Expression::InfixOp { lhe, rhe, ..} => {
@@ -646,6 +662,16 @@ fn analyse_expression(
             for arg in args.iter() {
                 analyse_expression(arg, read_vars);
             }            
+        },
+        Expression::AnonymousComp {params, signals,.. }=> {
+            // DUDA: signals no debería tenerse en cuenta porque estamos seguros de que 
+            // aqui no hay señales?
+            for param in params.iter(){
+                analyse_expression(param, read_vars);
+            }
+            for signal in signals.iter(){
+                analyse_expression(signal, read_vars);
+            }
         },
         Expression::ArrayInLine{values,..} => {
             for value in values.iter() {
@@ -711,11 +737,33 @@ fn remove_useless_subs(
             // Check if its corresponding id is in final_result
             if access.len() == 0{
                 let is_useless = final_result.contains(&meta.elem_id);
+                let type_reduction = meta.get_type_knowledge().get_reduces_to();
                 if is_useless{
-                    println!("DEBUG: removing assignment with id {} of var {}", meta.elem_id, var);
+                    match type_reduction {
+                        TypeReduction::Variable =>{
+                            println!("DEBUG: removing assignment with id {} of var {}", meta.elem_id, var);
+                        
+                        },
+                        _ => {debug_assert!(false);}
+                    }
                 }
                 else{
-                    println!("DEBUG: assignment with id {} of var {} allowed to be kept", meta.elem_id, var);
+                    let type_string; 
+                    match type_reduction {
+                        TypeReduction::Variable =>{
+                            type_string = "var";
+                        },
+                        TypeReduction::Component =>{
+                            type_string = "component";
+                        },
+                        TypeReduction::Signal =>{
+                            type_string = "signal";
+                        },
+                        TypeReduction::Tag =>{
+                            type_string = "tag";
+                        }
+                    }
+                    println!("DEBUG: assignment with id {} of {} {} allowed to be kept", meta.elem_id, type_string, var);
                 }
                 is_useless
             }
