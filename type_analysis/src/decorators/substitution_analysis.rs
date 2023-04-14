@@ -397,23 +397,23 @@ fn analyse_block(
 
 fn merge_branches(
     unknown1: &mut VarMap,
-    unknown2: & VarMap,
+    unknown2: VarMap,
     useful1: &mut HashSet<SubsInfo>,
-    useful2: & HashSet<SubsInfo>,
+    useful2:  HashSet<SubsInfo>,
     useless1: &mut HashSet<SubsInfo>,
-    useless2: & HashSet<SubsInfo>,
+    useless2: HashSet<SubsInfo>,
 ) {
     // Useful = Useful1 \cup Useful2, 
     //   but we put into Useful1 to avoid creating more sets
-    useful1.extend(useful2.iter().cloned());
+    useful1.extend(useful2);
     // Unknown = Unknown1 \cup Unknown2,
-    for (id_var, set_info2) in unknown2.iter() {
-        if let Option::Some(set_info1) = unknown1.get_mut(id_var) {
-            set_info1.extend(set_info2.iter().cloned());
+    for (id_var, set_info2) in unknown2 {
+        if let Option::Some(set_info1) = unknown1.get_mut(&id_var) {
+            set_info1.extend(set_info2);
         }
     }
     // Useless = Useless1 \cup Useless2
-    useless1.extend(useless2.iter().cloned());
+    useless1.extend(useless2);
     // Unknown = Unknown \ Useful
     // Useless = Useless \ Useful
     for info in useful1.iter() {
@@ -469,11 +469,11 @@ fn analyse_if_else(
         }
         merge_branches(
             unknown, 
-            &unknown_else, 
+            unknown_else, 
             useful, 
-            & useful_else, 
+            useful_else, 
             useless, 
-            &useless_else);
+            useless_else);
     }
     else{
         unreachable!();
@@ -527,19 +527,19 @@ fn analyse_while(
         // merge 0 and 1 iterations
         merge_branches(
             unknown, 
-            &unknown_1, 
+            unknown_1, 
             useful, 
-            & useful_1, 
+             useful_1, 
             useless, 
-            &useless_1);
+            useless_1);
         // merge 0, 1 and 2 iterations
         merge_branches(
             unknown, 
-            &unknown_2, 
+            unknown_2, 
             useful, 
-            & useful_2, 
+             useful_2, 
             useless, 
-            &useless_2);
+            useless_2);
     }
     else{
         unreachable!();
