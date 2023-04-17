@@ -213,6 +213,7 @@ pub enum Statement {
         access: Vec<Access>,
         op: AssignOp,
         rhe: Expression,
+        is_artificial: bool,
     },
     MultSubstitution {
         meta: Meta,

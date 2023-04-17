@@ -26,7 +26,12 @@ fn start() -> Result<(), ()> {
     let user_input = Input::new()?;
     let mut program_archive = parser_user::parse_project(&user_input)?;
     type_analysis_user::analyse_project(&mut program_archive)?;
-
+    // DEBUG: Only for benchmarking assignment analysis
+    use program_structure::ast_shortcuts;
+    use std::sync::atomic::{Ordering};
+    let artificial_assig = ast_shortcuts::ARTIFICIAL_VAR_ASSIGNMENTS.load(Ordering::Relaxed);
+    println!("TotalArtificial: {}", artificial_assig);
+    
     let config = ExecutionConfig {
         no_rounds: user_input.no_rounds(),
         flag_p: user_input.parallel_simplification_flag(),

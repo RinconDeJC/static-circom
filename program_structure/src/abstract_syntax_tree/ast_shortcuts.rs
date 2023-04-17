@@ -4,6 +4,10 @@ use super::statement_builders::*;
 use crate::ast::{Access, Expression, VariableType};
 use num_bigint::BigInt;
 
+// DEBUG: Only for benchmarking assignment analysis
+use std::sync::atomic::{AtomicU32, Ordering};
+pub static ARTIFICIAL_VAR_ASSIGNMENTS: AtomicU32 = AtomicU32::new(0);
+
 #[derive(Clone)]
 pub struct Symbol {
     pub name: String,
@@ -24,7 +28,7 @@ pub fn assign_with_op_shortcut(
     let (var, access) = variable;
     let variable = build_variable(meta.clone(), var.clone(), access.clone());
     let infix = build_infix(meta.clone(), variable, op, rhe);
-    build_substitution(meta, var, access, AssignOp::AssignVar, infix)
+    build_substitution(meta, var, access, AssignOp::AssignVar, infix, false)
 }
 
 pub fn plusplus(meta: Meta, variable: (String, Vec<Access>)) -> Statement {
@@ -69,17 +73,20 @@ pub fn split_declaration_into_single_nodes(
         initializations.push(single_declaration);
         if let Option::Some(init) = possible_init {
             let substitution =
-                build_substitution(meta.clone(), symbol.name, vec![], op, init);
+                build_substitution(meta.clone(), symbol.name, vec![], op, init, false);
             initializations.push(substitution);
         }
         else if xtype == Var {
+            // DEBUG: Only for benchmarking assignment analysis
+            ARTIFICIAL_VAR_ASSIGNMENTS.fetch_add(1, Ordering::Relaxed);
+            
             let mut value = Expression:: Number(meta.clone(), BigInt::from(0));
             for dim_expr in dimensions.iter().rev(){
                 value = build_uniform_array(meta.clone(), value, dim_expr.clone());
             }
 
             let substitution = 
-                build_substitution(meta.clone(), symbol.name, vec![], op, value);
+                build_substitution(meta.clone(), symbol.name, vec![], op, value, true);
             initializations.push(substitution);
         }
     }
@@ -105,13 +112,16 @@ pub fn split_declaration_into_single_nodes_and_multisubstitution(
         let single_declaration = build_declaration(with_meta.clone(), has_type, name.clone(), dimensions.clone());
         initializations.push(single_declaration);
         if xtype == Var && init.is_none() {
+            // DEBUG: Only for benchmarking assignment analysis
+            ARTIFICIAL_VAR_ASSIGNMENTS.fetch_add(1, Ordering::Relaxed);
+
             let mut value = Expression:: Number(meta.clone(), BigInt::from(0));
             for dim_expr in dimensions.iter().rev(){
                 value = build_uniform_array(meta.clone(), value, dim_expr.clone());
             }
 
             let substitution = 
-                build_substitution(meta.clone(), symbol.name, vec![], AssignOp::AssignVar, value);
+                build_substitution(meta.clone(), symbol.name, vec![], AssignOp::AssignVar, value, true);
             initializations.push(substitution);
         }
         values.push(Expression::Variable { meta: with_meta.clone(), name: name, access: Vec::new() })

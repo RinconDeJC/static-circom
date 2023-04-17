@@ -303,7 +303,8 @@ fn remove_anonymous_from_statement(
                         id_var_while.clone(), 
                         vec![], 
                         AssignOp::AssignVar, 
-                        Expression::Number(meta.clone(), BigInt::from(0))
+                        Expression::Number(meta.clone(), BigInt::from(0)),
+                        false,
                     )
                 );
                 declarations.append(&mut declarations2);
@@ -313,12 +314,13 @@ fn remove_anonymous_from_statement(
                     lhe: Box::new(var_access),
                     rhe: Box::new(Expression::Number(meta.clone(),  BigInt::from(1))),
                 };
-                let subs_access = Statement::Substitution{
+                let subs_access = Statement::Substitution {
                     meta: meta.clone(),
                     var: id_var_while,
                     access: Vec::new(),
                     op: AssignOp::AssignVar,
                     rhe: next_access,
+                    is_artificial: false,
                 };
                     
                 let new_block = Statement::Block{
@@ -368,9 +370,9 @@ fn remove_anonymous_from_statement(
             }
             Result::Ok((Statement::Block { meta : meta, stmts: new_stmts},declarations))
         }
-        Statement::Substitution {  meta, var, op, rhe, access} => {
+        Statement::Substitution {  meta, var, op, rhe, access, is_artificial} => {
             let (mut stmts, declarations, new_rhe) = remove_anonymous_from_expression(templates, file_lib, rhe, var_access)?;
-            let subs = Statement::Substitution { meta: meta.clone(), var: var, access: access, op: op, rhe: new_rhe };
+            let subs = Statement::Substitution { meta: meta.clone(), var: var, access: access, op: op, rhe: new_rhe , is_artificial: is_artificial};
             let mut substs = Vec::new(); 
             if stmts.is_empty(){
                 Result::Ok((subs, declarations))
@@ -440,7 +442,8 @@ pub fn remove_anonymous_from_expression(
                 id_anon_temp.clone(), 
                 access.clone(), 
                 AssignOp::AssignVar, 
-                exp_with_call
+                exp_with_call,
+                false
             );
             seq_substs.push(sub);
 
@@ -490,7 +493,7 @@ pub fn remove_anonymous_from_expression(
  
                 seq_substs.append(&mut stmts);
                 declarations.append(&mut declarations2);
-                let subs = Statement::Substitution { meta: meta.clone(), var: id_anon_temp.clone(), access: acc, op: *new_operators.get(num_input).unwrap(), rhe: new_exp };
+                let subs = Statement::Substitution { meta: meta.clone(), var: id_anon_temp.clone(), access: acc, op: *new_operators.get(num_input).unwrap(), rhe: new_exp, is_artificial: false };
                 num_input += 1;
                 seq_substs.push(subs);
             }
@@ -783,7 +786,7 @@ fn remove_tuples_from_statement(stm: Statement) -> Result<Statement, Report> {
                             if let Expression::Variable { meta, name, access } = lhe {  
                                 let rhe = values2.remove(0);
                                 if name != "_" {                                
-                                    substs.push(build_substitution(meta, name, access, op, rhe));
+                                    substs.push(build_substitution(meta, name, access, op, rhe, false));
                                 } else{
                                     substs.push(Statement::UnderscoreSubstitution { meta: meta, op, rhe: rhe });
                                 }
@@ -858,13 +861,13 @@ fn remove_tuples_from_statement(stm: Statement) -> Result<Statement, Report> {
             }
             Result::Ok(Statement::Block { meta : meta, stmts: new_stmts})
         }
-        Statement::Substitution {  meta, var, op, rhe, access} => {
+        Statement::Substitution {  meta, var, op, rhe, access, is_artificial} => {
             let new_rhe = remove_tuple_from_expression(rhe);
             if new_rhe.is_tuple() {
                 return Result::Err(tuple_general_error(meta.clone(),"Left-side of the statement is not a tuple".to_string()));       
             }
             if var != "_" {   
-                Result::Ok(Statement::Substitution { meta: meta.clone(), var: var, access: access, op: op, rhe: new_rhe })
+                Result::Ok(Statement::Substitution { meta: meta.clone(), var: var, access: access, op: op, rhe: new_rhe , is_artificial: is_artificial})
             }
             else {
                 Result::Ok(Statement::UnderscoreSubstitution { meta: meta, op, rhe: new_rhe })

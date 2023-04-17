@@ -21,6 +21,8 @@ struct SubsInfo{
     var_name: String,
     location: FileLocation,
     file_id: Option<usize>,
+    contains_signal: bool,
+    is_artificial: bool,
 }
 impl Hash for SubsInfo {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -63,7 +65,7 @@ pub fn function_substitution_analysis(
         found_vars.add_variable(param, curr_var_id);
         curr_var_id += 1;
     }
-    println!("substitution analysis of function: {}", function_data.get_name());
+    println!("Function: {}", function_data.get_name());
     analyse_statement(
         &mut unknown,
         &mut useful,
@@ -73,19 +75,25 @@ pub fn function_substitution_analysis(
         body,
     );
     debug_assert!(unknown.is_empty());
-    println!("Number of useless assignments detected in function {}: {}", function_data.get_name(), useless.len());
-    println!("Number of useful assignments detected in function {}: {}", function_data.get_name(), useful.len());
-    println!("Number of unknown assignments detected in function {}: {}", function_data.get_name(), unknown.len());
+    println!("Useless: {}", useless.len());
+    let mut artificials = useless.clone();
+    for info in useless.iter(){
+        if !info.is_artificial{
+            artificials.remove(info);
+        }
+    } 
+    println!("Artificial: {}", artificials.len());
+    println!("Useful: {}", useful.len());
+    println!("Unknown: {}", unknown.len());
     let mut reports = ReportCollection::new();
+    add_warnings(&useless, &mut reports);
     let mut_body = function_data.get_mut_body();
-    let mut tmp_reports = ReportCollection::new();
     let mut final_result = HashSet::new();
     for info in useless.iter(){
         final_result.insert(info.id);
     }
-    remove_useless_subs(mut_body, &final_result, &mut tmp_reports);
+    remove_useless_subs(mut_body, &final_result, &mut reports);
     println!("------------------");
-    // TODO: add proper warnings
     reports
 }
 
@@ -102,7 +110,7 @@ pub fn template_substitution_analysis(
         found_vars.add_variable(param, curr_var_id);
         curr_var_id += 1;
     }
-    println!("substitution analysis of template: {}", template_data.get_name());
+    println!("Template: {}", template_data.get_name());
     analyse_statement(
         &mut unknown,
         &mut useful,
@@ -111,24 +119,70 @@ pub fn template_substitution_analysis(
         &mut curr_var_id,
         body,
     );
-    debug_assert!(unknown.is_empty());
-    println!("Number of useless assignments detected in template {}: {}", template_data.get_name(), useless.len());
-    println!("Number of useful assignments detected in template {}: {}", template_data.get_name(), useful.len());
-    println!("Number of unknown assignments detected in template {}: {}", template_data.get_name(), unknown.len());
     let mut reports = ReportCollection::new();
+    debug_assert!(unknown.is_empty());
+    println!("Useless: {}", useless.len());
+    let mut artificials = useless.clone();
+    for info in useless.iter(){
+        if !info.is_artificial{
+            artificials.remove(info);
+        }
+    } 
+    println!("Artificial: {}", artificials.len());
+    println!("Useful: {}", useful.len());
+    println!("Unknown: {}", unknown.len());
+    add_warnings(&useless, &mut reports);
     let mut_body = template_data.get_mut_body();
-    let mut tmp_reports = ReportCollection::new();
     let mut final_result = HashSet::new();
     for info in useless.iter(){
         final_result.insert(info.id);
     }
-    remove_useless_subs(mut_body, &final_result, &mut tmp_reports);
+    remove_useless_subs(mut_body, &final_result, &mut reports);
     println!("------------------");
-    // TODO: add proper warnings
     reports
 }
 
 
+// ------------------------------------------------
+// |               warning handling               |
+// ------------------------------------------------
+fn add_warnings(
+    useless: &HashSet<SubsInfo>,
+    reports: &mut ReportCollection
+) {
+    for info in useless.iter(){
+        if info.contains_signal{
+            let mut warning = Report::warning(
+                String::from("Useless substitution"),
+                ReportCode::UselessSubstitution
+            );
+            warning.add_primary(
+                info.location.clone(),
+                info.file_id.unwrap(),
+                format!(
+                    "{} variable substitution is never read and contains signals",
+                    info.var_name
+                )
+            );
+            reports.push(warning);
+        }
+        if !info.is_artificial{
+            let mut warning = Report::warning(
+                String::from("Useless substitution"),
+                ReportCode::UselessSubstitution
+            );
+            warning.add_primary(
+                info.location.clone(),
+                info.file_id.unwrap(),
+                format!(
+                    "{} variable substitution is useless but not artificial",
+                    info.var_name
+                )
+            );
+            reports.push(warning);
+        }
+    }
+}
 
 
 // ------------------------------------------------
@@ -302,16 +356,21 @@ fn analyse_assignment(
     stmt: &Statement,  
 ) {
     use Statement::Substitution;
-    if let Substitution { var, access, meta, rhe,.. } = stmt {
+    if let Substitution { var, access, meta, rhe,is_artificial,.. } = stmt {
         // NewUseful = {(x,id) \in Unknown : x \in rhe}
         // Unknown = Unknown \ NewUseful
         // Useful = Useful \cup NewUseful
         let mut rhe_vars = HashSet::new();
         analyse_expression(rhe, &mut rhe_vars);
         analyse_reader(unknown, useful, found_vars, &rhe_vars);
-
+        println!("DEBUG: analyzing assignment of {}", var);
+        println!("DEBUG: read vars in assignment:");
+        for var_name in rhe_vars{
+            println!("  {var_name}");
+        }
         if let TypeReduction::Variable = meta.get_type_knowledge().get_reduces_to(){
             if access.len() == 0 {
+                println!("DEBUG: considering assignment of {}", var);
                 if let Option::Some(var_id) = found_vars.get_variable(var){
                     // NewUseless = {(y, id) \in Unknown}
                     // Unknown = Unknown \ NewUseless
@@ -325,7 +384,9 @@ fn analyse_assignment(
                         var:*var_id,
                         var_name:var.clone(),
                         location:meta.location.clone(),
-                        file_id:meta.file_id.clone()
+                        file_id:meta.file_id.clone(),
+                        contains_signal: expression_contains_signals(rhe),
+                        is_artificial: *is_artificial, 
                     };
                     let mut has_appeared = useless.contains(&assignment_info);
                     has_appeared = has_appeared || useful.contains(&assignment_info);
@@ -546,21 +607,6 @@ fn analyse_while(
     }
 
 }
-// Sample of warning addition, temporary
-// let mut warning = Report::warning(
-//     String::from("Useless substitution"),
-//     ReportCode::UselessSubstitution
-// );
-// warning.add_primary(
-//     info.location.clone(),
-//     info.file_id.unwrap(),
-//     format!(
-//         "{} variable substitution found to be useless",
-//         info.var_name
-//     )
-// );
-// reports.push(warning);
-// final_result.insert(info.id);
 
 fn analyse_initialization_block(
     unknown: &mut VarMap,
@@ -691,6 +737,86 @@ fn analyse_expression(
     }
 }
 
+/// Returns the variables appearing in the expression inside
+/// the HashMap given
+fn expression_contains_signals(
+    exp: &Expression,
+) -> bool {
+    match exp{
+        Expression::Variable{meta,..} => {
+            if let TypeReduction::Signal = 
+                meta.get_type_knowledge().get_reduces_to()
+            {
+                return true;
+            }
+            return false;
+        },
+        Expression::InfixOp { lhe, rhe, ..} => {
+            expression_contains_signals(lhe)
+            ||
+            expression_contains_signals(rhe)
+        },
+        Expression::PrefixOp{rhe,..} => {
+            expression_contains_signals(rhe)
+        },
+        Expression::InlineSwitchOp { cond, if_true, if_false,.. }=> {
+            expression_contains_signals(cond)
+            ||
+            expression_contains_signals(if_true)
+            ||
+            expression_contains_signals(if_false)
+        },
+        Expression::ParallelOp{rhe,..} => {
+            expression_contains_signals(rhe)
+        },
+        Expression::Call{args,..} => {
+            for arg in args.iter() {
+                if expression_contains_signals(arg) {
+                    return true;
+                }
+            }
+            return false;        
+        },
+        Expression::AnonymousComp {params, signals,.. }=> {
+            // DUDA: signals no debería tenerse en cuenta porque estamos seguros de que 
+            // aqui no hay señales?
+            for param in params.iter(){
+                if expression_contains_signals(param) {
+                    return true;
+                }
+            }
+            for signal in signals.iter(){
+                if expression_contains_signals(signal) {
+                    return true;
+                }
+            }
+            return false;
+        },
+        Expression::ArrayInLine{values,..} => {
+            for value in values.iter() {
+                if expression_contains_signals(value){
+                    return true;
+                }
+            }
+            return false;
+        },
+        Expression::Tuple{values,..} => {
+            for value in values.iter() {
+                if expression_contains_signals(value) {
+                    return true;
+                }
+            }
+            return false;
+        },
+        Expression::UniformArray{value,dimension,..} => {
+            expression_contains_signals(value)
+            ||
+            expression_contains_signals(dimension)      
+        },
+        _ => {false}
+    }
+}
+
 // ------------------------------------------------
 // |        useless substitution removal          |
 // ------------------------------------------------
@@ -784,3 +910,21 @@ fn remove_useless_subs(
         _ => {false}
     }
 }
+
+
+// Sample of warning addition, temporary
+// let mut warning = Report::warning(
+//     String::from("Useless substitution"),
+//     ReportCode::UselessSubstitution
+// );
+// warning.add_primary(
+//     info.location.clone(),
+//     info.file_id.unwrap(),
+//     format!(
+//         "{} variable substitution found to be useless",
+//         info.var_name
+//     )
+// );
+// reports.push(warning);
+// final_result.insert(info.id);
+
