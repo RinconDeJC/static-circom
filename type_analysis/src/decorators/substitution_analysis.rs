@@ -23,6 +23,7 @@ struct SubsInfo{
     file_id: Option<usize>,
     contains_signal: bool,
     is_artificial: bool,
+    is_constant: bool,
 }
 impl Hash for SubsInfo {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -175,8 +176,14 @@ fn add_warnings(
                 info.location.clone(),
                 info.file_id.unwrap(),
                 format!(
-                    "{} variable substitution is useless but not artificial",
-                    info.var_name
+                    "{} variable substitution is useless but not artificial{}",
+                    info.var_name,
+                    if info.is_constant{
+                        ". However, it is a constant"
+                    }
+                    else{
+                        ""
+                    }
                 )
             );
             reports.push(warning);
@@ -274,6 +281,7 @@ fn analyse_statement(
                 useless,
                 found_vars,
                 stmt,
+                false,
             );
         }
         Statement::UnderscoreSubstitution {..} =>{
@@ -353,7 +361,8 @@ fn analyse_assignment(
     useful: &mut HashSet<SubsInfo>,
     useless: &mut HashSet<SubsInfo>,
     found_vars: &mut SubsEnvironment,
-    stmt: &Statement,  
+    stmt: &Statement,
+    is_constant: bool,
 ) {
     use Statement::Substitution;
     if let Substitution { var, access, meta, rhe,is_artificial,.. } = stmt {
@@ -387,6 +396,7 @@ fn analyse_assignment(
                         file_id:meta.file_id.clone(),
                         contains_signal: expression_contains_signals(rhe),
                         is_artificial: *is_artificial, 
+                        is_constant: is_constant,
                     };
                     let mut has_appeared = useless.contains(&assignment_info);
                     has_appeared = has_appeared || useful.contains(&assignment_info);
@@ -616,17 +626,41 @@ fn analyse_initialization_block(
     curr_var_id: &mut IdVar, 
     stmt_i: &Statement,
 ) {
-    use Statement::InitializationBlock;
+    use Statement::{InitializationBlock, Declaration, Substitution};
     if let InitializationBlock { initializations, .. } = stmt_i {
         // iterate over statements
+        // TODO: Fijarse en que aquí solo están los statements de las declaraciones
+        // y las substituciones. Mirar cómo se hace en constant_handler (todo lo 
+        // relacionado con initialization block). Recorrer las declaraciones mirando
+        // el campo is_constant, dodne está apuntado si es contante la variable declarada
+        // teniendo en cuenta todo el código de ese bloque. Si es constante llamar a 
+        // el análisis de las substituciones de dichas substituciones con un booleano
+        // de is_constant para apuntarlo en SubsInfo.
+        let mut constants = HashSet::new();
+        for s in initializations.iter() {
+            if let Declaration { name, is_constant, .. } = s {
+                if *is_constant {
+                    constants.insert(name.clone());
+                }
+            }
+        }
         for stmt in initializations.iter() {
-            analyse_statement(
-                unknown, 
-                useful, 
-                useless, 
-                found_vars, 
-                curr_var_id, 
-                stmt);
+            match stmt {
+                Declaration {..} => {
+                    analyse_declaration(found_vars, curr_var_id, stmt);
+                },
+                Substitution {var, ..} => {
+                    analyse_assignment(
+                        unknown, 
+                        useful, 
+                        useless, 
+                        found_vars, 
+                        stmt, 
+                        constants.contains(var));
+                },
+                _ => {unreachable!();}
+
+            }
         }
     } else {
         unreachable!()
