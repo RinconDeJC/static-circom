@@ -372,14 +372,14 @@ fn analyse_assignment(
         let mut rhe_vars = HashSet::new();
         analyse_expression(rhe, &mut rhe_vars);
         analyse_reader(unknown, useful, found_vars, &rhe_vars);
-        println!("DEBUG: analyzing assignment of {}", var);
-        println!("DEBUG: read vars in assignment:");
-        for var_name in rhe_vars{
-            println!("  {var_name}");
-        }
+        // println!("DEBUG: analyzing assignment of {}", var);
+        // println!("DEBUG: read vars in assignment:");
+        // for var_name in rhe_vars{
+        //     println!("  {var_name}");
+        // }
         if let TypeReduction::Variable = meta.get_type_knowledge().get_reduces_to(){
             if access.len() == 0 {
-                println!("DEBUG: considering assignment of {}", var);
+                // println!("DEBUG: considering assignment of {}", var);
                 if let Option::Some(var_id) = found_vars.get_variable(var){
                     // NewUseless = {(y, id) \in Unknown}
                     // Unknown = Unknown \ NewUseless
@@ -923,7 +923,7 @@ fn remove_useless_subs(
                             type_string = "tag";
                         }
                     }
-                    println!("DEBUG: assignment with id {} of {} {} allowed to be kept", meta.elem_id, type_string, var);
+                    // println!("DEBUG: assignment with id {} of {} {} allowed to be kept", meta.elem_id, type_string, var);
                 }
                 is_useless
             }
