@@ -369,9 +369,14 @@ fn analyse_assignment(
         // NewUseful = {(x,id) \in Unknown : x \in rhe}
         // Unknown = Unknown \ NewUseful
         // Useful = Useful \cup NewUseful
-        let mut rhe_vars = HashSet::new();
-        analyse_expression(rhe, &mut rhe_vars);
-        analyse_reader(unknown, useful, found_vars, &rhe_vars);
+        let mut read_vars = HashSet::new();
+        analyse_expression(rhe, &mut read_vars);
+        for acc_exp in access.iter(){
+            if let Access::ArrayAccess(index) = acc_exp{
+                analyse_expression(index, &mut read_vars);
+            }
+        }
+        analyse_reader(unknown, useful, found_vars, &read_vars);
         // println!("DEBUG: analyzing assignment of {}", var);
         // println!("DEBUG: read vars in assignment:");
         // for var_name in rhe_vars{
