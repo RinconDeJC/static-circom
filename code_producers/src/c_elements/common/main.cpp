@@ -255,13 +255,14 @@ int main (int argc, char *argv[]) {
     std::string datfile = cl + ".dat";
     std::string jsonfile(argv[1]);
     std::string wtnsfile(argv[2]);
-  
-    // auto t_start = std::chrono::high_resolution_clock::now();
+   std::ofstream times;
+   times.open("times.txt", std::fstream::app);
+  //  auto t_start = std::chrono::high_resolution_clock::now();
 
    Circom_Circuit *circuit = loadCircuit(datfile);
 
    Circom_CalcWit *ctx = new Circom_CalcWit(circuit);
-  
+   auto t_start = std::chrono::high_resolution_clock::now();
    loadJson(ctx, jsonfile);
    if (ctx->getRemaingInputsToBeSet()!=0) {
      std::cerr << "Not all inputs have been set. Only " << get_main_input_signal_no()-ctx->getRemaingInputsToBeSet() << " out of " << get_main_input_signal_no() << std::endl;
@@ -280,8 +281,8 @@ int main (int argc, char *argv[]) {
 
    writeBinWitness(ctx,wtnsfile);
   
-   //auto t_end = std::chrono::high_resolution_clock::now();
-   //std::cout << std::chrono::duration<double, std::milli>(t_end-t_mid).count()<<std::endl;
+   auto t_end = std::chrono::high_resolution_clock::now();
+   times << int(std::chrono::duration<double, std::micro>(t_end-t_start).count())<<std::endl;
 
   }  
 }

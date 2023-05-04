@@ -937,13 +937,12 @@ fn remove_useless_subs(
             }
         }          
         Statement::InitializationBlock {initializations,.. } =>{
-            for ini in initializations{
-                remove_useless_subs(
-                    ini, 
+            initializations.retain_mut(|s| 
+                !remove_useless_subs(
+                    s, 
                     final_result, 
-                    reports
+                    reports)
                 );
-            }
             false
         }
         _ => {false}
