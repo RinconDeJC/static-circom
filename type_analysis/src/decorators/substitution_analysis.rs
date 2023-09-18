@@ -2,7 +2,6 @@ use program_structure::ast::*;
 use program_structure::file_definition::FileLocation;
 use program_structure::error_code::ReportCode;
 use program_structure::error_definition::{Report, ReportCollection};
-use program_structure::file_definition;
 use program_structure::function_data::FunctionData;
 use program_structure::environment::VarEnvironment;
 use program_structure::template_data::TemplateData;
@@ -12,7 +11,6 @@ use std::hash::{Hash, Hasher};
 type IdSubs = usize;
 type IdVar = u32;
 type SubsEnvironment = VarEnvironment<IdVar>;
-// type SubsMap = HashMap<IdSubs, (IdVar, u32)>;
 type VarMap = HashMap<IdVar, HashSet<SubsInfo>>;
 #[derive(Clone)]
 struct SubsInfo{
@@ -36,8 +34,7 @@ impl PartialEq for SubsInfo {
     }
 }
 impl Eq for SubsInfo {}
-// NOTA: El tipo al que se reduce cada variable ya está apuntado en el Meta de 
-// cada variable
+
 
 /// Given a function, this analysis checks for useless substitutions
 /// in the code and eliminates them.
@@ -66,7 +63,6 @@ pub fn function_substitution_analysis(
         found_vars.add_variable(param, curr_var_id);
         curr_var_id += 1;
     }
-    println!("Function: {}", function_data.get_name());
     analyse_statement(
         &mut unknown,
         &mut useful,
@@ -76,16 +72,12 @@ pub fn function_substitution_analysis(
         body,
     );
     debug_assert!(unknown.is_empty());
-    println!("Useless: {}", useless.len());
     let mut artificials = useless.clone();
     for info in useless.iter(){
         if !info.is_artificial{
             artificials.remove(info);
         }
     } 
-    println!("Artificial: {}", artificials.len());
-    println!("Useful: {}", useful.len());
-    println!("Unknown: {}", unknown.len());
     let mut reports = ReportCollection::new();
     add_warnings(&useless, &mut reports);
     let mut_body = function_data.get_mut_body();
@@ -94,10 +86,24 @@ pub fn function_substitution_analysis(
         final_result.insert(info.id);
     }
     remove_useless_subs(mut_body, &final_result, &mut reports);
-    println!("------------------");
     reports
 }
 
+
+/// Given a template, this analysis checks for useless substitutions
+/// in the code and eliminates them.
+/// 
+/// A subsitution over a variable is considered useless if a valid 
+/// substitution is performed on that same variable before it has been read in
+/// between or the variable goes out of scope before being read.
+/// 
+/// A substitution is considered, at the moment, valid, if no access is 
+/// performed during the substitution, e.g, 
+/// ```
+/// x = 0;        // is considered a valid substitution,
+/// x[i] = 0;     // this isn't
+/// x.field = 0;  // and neither is this.
+/// ```
 pub fn template_substitution_analysis(
     template_data: &mut TemplateData
 ) -> ReportCollection {
@@ -111,7 +117,6 @@ pub fn template_substitution_analysis(
         found_vars.add_variable(param, curr_var_id);
         curr_var_id += 1;
     }
-    println!("Template: {}", template_data.get_name());
     analyse_statement(
         &mut unknown,
         &mut useful,
@@ -122,16 +127,12 @@ pub fn template_substitution_analysis(
     );
     let mut reports = ReportCollection::new();
     debug_assert!(unknown.is_empty());
-    println!("Useless: {}", useless.len());
     let mut artificials = useless.clone();
     for info in useless.iter(){
         if !info.is_artificial{
             artificials.remove(info);
         }
     } 
-    println!("Artificial: {}", artificials.len());
-    println!("Useful: {}", useful.len());
-    println!("Unknown: {}", unknown.len());
     add_warnings(&useless, &mut reports);
     let mut_body = template_data.get_mut_body();
     let mut final_result = HashSet::new();
@@ -139,7 +140,6 @@ pub fn template_substitution_analysis(
         final_result.insert(info.id);
     }
     remove_useless_subs(mut_body, &final_result, &mut reports);
-    println!("------------------");
     reports
 }
 
@@ -206,7 +206,6 @@ fn analyse_statement(
 ) { 
     match stmt{
         Statement::Block {..}=> {
-            // println!("block{{");
             analyse_block(
                 unknown,
                 useful,
@@ -215,10 +214,8 @@ fn analyse_statement(
                 curr_var_id,
                 stmt,
             );
-            // println!("}}block");
         }
         Statement::IfThenElse {..} =>{
-            // println!("if else{{");
             analyse_if_else(
                 unknown,
                 useful,
@@ -227,10 +224,8 @@ fn analyse_statement(
                 curr_var_id,
                 stmt,
             );            
-            // println!("}}if else");
         }
         Statement::While {..} =>{
-            // println!("while{{");
             analyse_while(
                 unknown,
                 useful,
@@ -239,10 +234,8 @@ fn analyse_statement(
                 curr_var_id,
                 stmt,
             );            
-            // println!("}}while");
         }
         Statement::Return {value,..} =>{
-            // println!("return{{");
             let mut read_vars = HashSet::new();
             analyse_expression(value, &mut read_vars);
             analyse_reader(
@@ -251,10 +244,8 @@ fn analyse_statement(
                 found_vars,
                 &read_vars,
             );
-            // println!("}}return");
         }
         Statement::InitializationBlock {..} =>{
-            // println!("initialization block{{");
             analyse_initialization_block(
                 unknown,
                 useful,
@@ -263,18 +254,15 @@ fn analyse_statement(
                 curr_var_id,
                 stmt,
             );
-            // println!("}}initialization block");
         }
-        Statement::Declaration {name,..} =>{
-            // println!("declaration of var {}", name);
+        Statement::Declaration {..} =>{
             analyse_declaration(
                 found_vars,
                 curr_var_id,
                 stmt,
             );
         }
-        Statement::Substitution {var, meta, ..} =>{
-            // println!("assignment with id {} of var {}", meta.elem_id, var);
+        Statement::Substitution {..} =>{
             analyse_assignment(
                 unknown,
                 useful,
@@ -285,14 +273,7 @@ fn analyse_statement(
             );
         }
         Statement::UnderscoreSubstitution {..} =>{
-            analyse_underscore_subs(
-                unknown,
-                useful,
-                useless,
-                found_vars,
-                curr_var_id,
-                stmt,
-            );
+
         }
         Statement::ConstraintEquality {lhe, rhe, ..} =>{
             let mut read_vars = HashSet::new();
@@ -377,14 +358,8 @@ fn analyse_assignment(
             }
         }
         analyse_reader(unknown, useful, found_vars, &read_vars);
-        // println!("DEBUG: analyzing assignment of {}", var);
-        // println!("DEBUG: read vars in assignment:");
-        // for var_name in rhe_vars{
-        //     println!("  {var_name}");
-        // }
         if let TypeReduction::Variable = meta.get_type_knowledge().get_reduces_to(){
             if access.len() == 0 {
-                // println!("DEBUG: considering assignment of {}", var);
                 if let Option::Some(var_id) = found_vars.get_variable(var){
                     // NewUseless = {(y, id) \in Unknown}
                     // Unknown = Unknown \ NewUseless
@@ -634,13 +609,6 @@ fn analyse_initialization_block(
     use Statement::{InitializationBlock, Declaration, Substitution};
     if let InitializationBlock { initializations, .. } = stmt_i {
         // iterate over statements
-        // TODO: Fijarse en que aquí solo están los statements de las declaraciones
-        // y las substituciones. Mirar cómo se hace en constant_handler (todo lo 
-        // relacionado con initialization block). Recorrer las declaraciones mirando
-        // el campo is_constant, dodne está apuntado si es contante la variable declarada
-        // teniendo en cuenta todo el código de ese bloque. Si es constante llamar a 
-        // el análisis de las substituciones de dichas substituciones con un booleano
-        // de is_constant para apuntarlo en SubsInfo.
         let mut constants = HashSet::new();
         for s in initializations.iter() {
             if let Declaration { name, is_constant, .. } = s {
@@ -681,28 +649,8 @@ fn analyse_declaration(
     if let Declaration { name, xtype, .. } = stmt {
         if let VariableType::Var = xtype{
             found_vars.add_variable(name, *curr_var_id);
-            // println!("DEBUG: Var {} -> id {}", name, *curr_var_id);
             *curr_var_id += 1;
         }
-    } else {
-        unreachable!()
-    }
-}
-
-fn analyse_underscore_subs(
-    unknown: &mut VarMap,
-    useful: &mut HashSet<SubsInfo>,
-    useless: &mut HashSet<SubsInfo>,
-    found_vars: &mut SubsEnvironment,
-    curr_var_id: &mut IdVar,
-    stmt: &Statement,
-) {
-    // DUDA: preguntar para qué sirven y si hay que tenerlas en cuenta 
-    use Statement::UnderscoreSubstitution;
-    if let UnderscoreSubstitution { rhe, .. } = stmt {
-        //let mut read_vars = HashSet::new();
-        //analyse_expression(rhe, &mut read_vars);
-        //mark_read_vars(&read_vars, found_vars, non_read);
     } else {
         unreachable!()
     }
@@ -749,8 +697,6 @@ fn analyse_expression(
             }            
         },
         Expression::AnonymousComp {params, signals,.. }=> {
-            // DUDA: signals no debería tenerse en cuenta porque estamos seguros de que 
-            // aqui no hay señales?
             for param in params.iter(){
                 analyse_expression(param, read_vars);
             }
@@ -817,8 +763,6 @@ fn expression_contains_signals(
             return false;        
         },
         Expression::AnonymousComp {params, signals,.. }=> {
-            // DUDA: signals no debería tenerse en cuenta porque estamos seguros de que 
-            // aqui no hay señales?
             for param in params.iter(){
                 if expression_contains_signals(param) {
                     return true;
@@ -898,39 +842,10 @@ fn remove_useless_subs(
             );
             false
         }
-        Statement::Substitution {access,var,meta,..} =>{
+        Statement::Substitution {access,meta,..} =>{
             // Check if its corresponding id is in final_result
             if access.len() == 0{
-                let is_useless = final_result.contains(&meta.elem_id);
-                let type_reduction = meta.get_type_knowledge().get_reduces_to();
-                if is_useless{
-                    match type_reduction {
-                        TypeReduction::Variable =>{
-                            println!("DEBUG: removing assignment with id {} of var {}", meta.elem_id, var);
-                        
-                        },
-                        _ => {debug_assert!(false);}
-                    }
-                }
-                else{
-                    let type_string; 
-                    match type_reduction {
-                        TypeReduction::Variable =>{
-                            type_string = "var";
-                        },
-                        TypeReduction::Component =>{
-                            type_string = "component";
-                        },
-                        TypeReduction::Signal =>{
-                            type_string = "signal";
-                        },
-                        TypeReduction::Tag =>{
-                            type_string = "tag";
-                        }
-                    }
-                    // println!("DEBUG: assignment with id {} of {} {} allowed to be kept", meta.elem_id, type_string, var);
-                }
-                is_useless
+                final_result.contains(&meta.elem_id)
             }
             else{
                 false
@@ -948,21 +863,4 @@ fn remove_useless_subs(
         _ => {false}
     }
 }
-
-
-// Sample of warning addition, temporary
-// let mut warning = Report::warning(
-//     String::from("Useless substitution"),
-//     ReportCode::UselessSubstitution
-// );
-// warning.add_primary(
-//     info.location.clone(),
-//     info.file_id.unwrap(),
-//     format!(
-//         "{} variable substitution found to be useless",
-//         info.var_name
-//     )
-// );
-// reports.push(warning);
-// final_result.insert(info.id);
 

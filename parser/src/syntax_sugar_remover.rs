@@ -391,9 +391,9 @@ fn remove_anonymous_from_statement(
             }
             Result::Ok((Statement::Block { meta, stmts: new_stmts}, comp_inits, var_inits, subs))
         }
-        Statement::Substitution {  meta, var, op, rhe, access} => {
+        Statement::Substitution {  meta, var, op, rhe, access, is_artificial} => {
             let (comp_declarations, mut stmts, new_rhe) = remove_anonymous_from_expression(templates, file_lib, rhe, var_access)?;
-            let subs = Statement::Substitution { meta: meta.clone(), var: var, access: access, op: op, rhe: new_rhe };
+            let subs = Statement::Substitution { meta: meta.clone(), var: var, access: access, op: op, rhe: new_rhe, is_artificial };
             if stmts.is_empty(){
                 Result::Ok((subs, comp_declarations, Vec::new(), Vec::new()))
             }else{
@@ -525,7 +525,7 @@ pub fn remove_anonymous_from_expression(
  
                 seq_substs.append(&mut stmts);
                 declarations.append(&mut declarations2);
-                let subs = Statement::Substitution { meta: meta.clone(), var: id_anon_temp.clone(), access: acc, op: operator, rhe: new_exp };
+                let subs = Statement::Substitution { meta: meta.clone(), var: id_anon_temp.clone(), access: acc, op: operator, rhe: new_exp , is_artificial: false};
                 seq_substs.push(subs);
             }
             // generate the expression for the outputs -> return as expression (if single out) or tuple
