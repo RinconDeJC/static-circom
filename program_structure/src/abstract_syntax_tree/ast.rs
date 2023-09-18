@@ -302,7 +302,7 @@ pub enum Expression {
         is_parallel: bool,
         params: Vec<Expression>,
         signals: Vec<Expression>,
-        names: Option<Vec<(AssignOp,String)>>,
+        names: Option<Vec<(AssignOp, String)>>,
     },
     ArrayInLine {
         meta: Meta,
